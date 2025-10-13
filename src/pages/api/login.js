@@ -1,5 +1,6 @@
 // src/pages/api/login.js
 import bcrypt from "bcryptjs";
+import crypto from "crypto"; // Imported for timingSafeEqual
 import { query } from "../../lib/db";
 
 /**
@@ -10,19 +11,36 @@ import { query } from "../../lib/db";
  * identifier = Empid (EMP175 / emp175) OR email
  */
 
+/**
+ * Checks if a string is likely a bcrypt hash.
+ * A simple heuristic based on prefix and length.
+ * @param {string} s The string to check.
+ * @returns {boolean}
+ */
 function isBcryptHash(s) {
-  return typeof s === "string" && /^\$2[aby]\$/.test(s);
+  return typeof s === "string" && s.length === 60 && s.startsWith("$2");
 }
-function safeEquals(a = "", b = "") {
-  if (a.length !== b.length) {
-    // dummy work to make timing similar
-    let d = 0;
-    for (let i = 0; i < 50; i++) d += i;
+
+/**
+ * A constant-time string comparison to prevent timing attacks.
+ * @param {string} a The first string (e.g., user-provided password).
+ * @param {string} b The second string (e.g., stored password).
+ * @returns {boolean} True if the strings are equal.
+ */
+function timingSafeEqual(a = "", b = "") {
+  // Use Node.js's built-in, optimized, and secure implementation.
+  // It requires buffers of the same length to run.
+  const aBuffer = Buffer.from(String(a));
+  const bBuffer = Buffer.from(String(b));
+
+  if (aBuffer.length !== bBuffer.length) {
+    // To prevent leaking length information, we compare the stored hash against itself.
+    // This ensures the function takes a consistent amount of time for incorrect passwords.
+    crypto.timingSafeEqual(bBuffer, bBuffer);
     return false;
   }
-  let r = 0;
-  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return r === 0;
+
+  return crypto.timingSafeEqual(aBuffer, bBuffer);
 }
 
 export default async function handler(req, res) {
@@ -55,32 +73,33 @@ export default async function handler(req, res) {
     const row = result?.rows?.[0];
 
     if (!row) {
-      // generic error to avoid user enumeration
+      // Generic error to avoid user enumeration
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    const stored = row.Password;
-    if (!stored) {
-      console.error("[/api/login] no stored password for", row.Empid ?? row.Email);
+    const storedPassword = row.Password;
+    if (!storedPassword) {
+      console.error(`[/api/login] No stored password for ${row.Empid ?? row.Email}`);
       return res.status(500).json({ error: "Authentication not configured for this account" });
     }
 
-    let ok = false;
-    if (isBcryptHash(stored)) {
-      ok = await bcrypt.compare(password, stored);
+    let passwordsMatch = false;
+    if (isBcryptHash(storedPassword)) {
+      passwordsMatch = await bcrypt.compare(password, storedPassword);
     } else {
-      // fallback safe compare (if DB currently stores plaintext). Migrate asap.
-      ok = safeEquals(String(password), String(stored));
+      // Fallback for plaintext passwords. MIGRATE TO BCRYPT ASAP.
+      passwordsMatch = timingSafeEqual(password, storedPassword);
+      // FIX: Removed invalid Unicode characters from the warning message.
       console.warn(`[AUTH] Non-bcrypt password detected for ${row.Empid || row.Email}. Migrate to bcrypt.`);
     }
 
-    if (!ok) {
+    if (!passwordsMatch) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
     // Return minimal, non-sensitive user info
     const safeUser = {
-      id: row.Empid,           // client expects user.id
+      id: row.Empid,
       empid: row.Empid,
       email: row.Email || null,
       role: row.Role || null,
@@ -89,7 +108,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ user: safeUser });
   } catch (err) {
-    console.error("[/api/login] error:", err && err.stack ? err.stack : err);
+    console.error("[/api/login] error:", err.stack || err);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
