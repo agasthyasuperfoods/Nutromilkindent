@@ -40,7 +40,7 @@ export default function Header() {
     <header style={styles.header}>
       <div style={styles.branding}>
         <Image 
-          src="/Logo.png" 
+          src="/logo.png" 
           alt="Agasthya Logo" 
           width={60}
           height={50}
