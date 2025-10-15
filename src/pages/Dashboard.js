@@ -1,14 +1,15 @@
 import Footer from '@/components/Footer'
 import Header from '@/components/Header'
-import IndentPage from '@/components/Indent'
+import Indent from '@/components/Indent'
+import Maindash from '@/components/Maindash'
 import React from 'react'
 
 function Dashboard() {
   return (
     <div>
       <Header />
-      <IndentPage />
-      <Footer />
+      <Maindash />
+      <Footer /> 
     </div>
   )
 }

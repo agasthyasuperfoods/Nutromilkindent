@@ -15,10 +15,10 @@ export default function Footer() {
   const inactiveColor = '#6B7280'; // A soft gray for inactive tabs
 
   const navItems = [
-    { href: '/', icon: IndentIcon, label: 'Indent' },
-    { href: '/reports', icon: ReportsIcon, label: 'Reports' },
-    { href: '/customers', icon: CustomersIcon, label: 'Customers' },
-    { href: '/profile', icon: ProfileIcon, label: 'Profile' }, // <<< NEW: Added Profile to nav items
+    { href: '/Dashboard', icon: IndentIcon, label: 'Indent' },
+    { href: '/Reports', icon: ReportsIcon, label: 'Reports' },
+    { href: '/Bulkcustomers', icon: CustomersIcon, label: 'Bulk Customers' },
+    { href: '/Profile', icon: ProfileIcon, label: 'Profile' }, // <<< NEW: Added Profile to nav items
   ];
 
   return (

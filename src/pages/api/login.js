@@ -4,38 +4,25 @@ import crypto from "crypto"; // Imported for timingSafeEqual
 import { query } from "../../lib/db";
 
 /**
- * Login for public."Logins"
- * Columns used (exact, case-sensitive): "Empid", "Email", "Password", "Role", "timeStamp"
+ * Login handler — Empid-only authentication
+ * Columns used (exact, case-sensitive): "Empid", "Password", "Role", "timeStamp"
  *
  * Accepts POST { identifier, password }
- * identifier = Empid (EMP175 / emp175) OR email
+ * identifier is treated as Empid only (case-insensitive).
  */
 
-/**
- * Checks if a string is likely a bcrypt hash.
- * A simple heuristic based on prefix and length.
- * @param {string} s The string to check.
- * @returns {boolean}
- */
+/** Simple bcrypt-hash heuristic */
 function isBcryptHash(s) {
   return typeof s === "string" && s.length === 60 && s.startsWith("$2");
 }
 
-/**
- * A constant-time string comparison to prevent timing attacks.
- * @param {string} a The first string (e.g., user-provided password).
- * @param {string} b The second string (e.g., stored password).
- * @returns {boolean} True if the strings are equal.
- */
+/** Constant-time safe comparison for non-bcrypt fallback */
 function timingSafeEqual(a = "", b = "") {
-  // Use Node.js's built-in, optimized, and secure implementation.
-  // It requires buffers of the same length to run.
   const aBuffer = Buffer.from(String(a));
   const bBuffer = Buffer.from(String(b));
 
   if (aBuffer.length !== bBuffer.length) {
-    // To prevent leaking length information, we compare the stored hash against itself.
-    // This ensures the function takes a consistent amount of time for incorrect passwords.
+    // compare b to itself to keep timing similar
     crypto.timingSafeEqual(bBuffer, bBuffer);
     return false;
   }
@@ -58,14 +45,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing identifier or password" });
     }
 
-    // Normalize for case-insensitive match
+    // Use identifier strictly as Empid (case-insensitive)
     const idLower = identifier.toLowerCase();
 
-    // Query using exact quoted identifiers in the public schema
     const sql = `
-      SELECT "Empid", "Email", "Password", "Role", "timeStamp"
+      SELECT "Empid", "Password", "Role", "timeStamp"
       FROM public."Logins"
-      WHERE lower("Empid") = $1 OR lower("Email") = $1
+      WHERE lower("Empid") = $1
       LIMIT 1
     `;
 
@@ -73,13 +59,13 @@ export default async function handler(req, res) {
     const row = result?.rows?.[0];
 
     if (!row) {
-      // Generic error to avoid user enumeration
+      // Generic message to avoid user enumeration
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
     const storedPassword = row.Password;
     if (!storedPassword) {
-      console.error(`[/api/login] No stored password for ${row.Empid ?? row.Email}`);
+      console.error(`[/api/login] No stored password for ${row.Empid}`);
       return res.status(500).json({ error: "Authentication not configured for this account" });
     }
 
@@ -87,21 +73,19 @@ export default async function handler(req, res) {
     if (isBcryptHash(storedPassword)) {
       passwordsMatch = await bcrypt.compare(password, storedPassword);
     } else {
-      // Fallback for plaintext passwords. MIGRATE TO BCRYPT ASAP.
+      // Fallback for plaintext passwords. Migrate these to bcrypt ASAP.
       passwordsMatch = timingSafeEqual(password, storedPassword);
-      // FIX: Removed invalid Unicode characters from the warning message.
-      console.warn(`[AUTH] Non-bcrypt password detected for ${row.Empid || row.Email}. Migrate to bcrypt.`);
+      console.warn(`[AUTH] Non-bcrypt password detected for ${row.Empid}. Migrate to bcrypt.`);
     }
 
     if (!passwordsMatch) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Return minimal, non-sensitive user info
+    // Minimal safe payload returned
     const safeUser = {
       id: row.Empid,
       empid: row.Empid,
-      email: row.Email || null,
       role: row.Role || null,
       timeStamp: row.timeStamp || null,
     };

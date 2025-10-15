@@ -34,7 +34,7 @@ export default function Header({ onAddCustomerClick }) {
         <Image 
           src="/Logo.png" 
           alt="Agasthya Logo" 
-          width={120} // Example width, adjust to your logo's aspect ratio
+          width={60} // Example width, adjust to your logo's aspect ratio
           height={50}
           style={styles.logo} // Custom styles are passed via the style prop
         />

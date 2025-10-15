@@ -1,439 +1,648 @@
-import React, { useState, useEffect } from 'react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { useRouter } from 'next/router';
+// src/pages/indent.js
+import React, { useState, useEffect } from "react";
+import Head from "next/head";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { useRouter } from "next/router";
 
-// Helper function to fetch the logo from the public folder and convert it to Base64
-const getImageBase64 = async (url) => {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.statusText}`);
-        }
-        const blob = await response.blob();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    } catch (error) {
-        console.error("Error fetching image for PDF:", error);
-        return null; // Return null if the image can't be loaded
-    }
-};
+/**
+ * Mobile-first Indent Page
+ * - Assumes global Header & Footer are fixed outside this component.
+ * - Content area is padded so nothing collapses under header/footer.
+ * - Back & Review buttons in Bulk Orders (Step 2) are on the same line.
+ */
 
+/* ---------- Config ---------- */
 const deliveryBoyAreas = {
-    'Mahendra': 'Gadipet',
-    'Aslam': 'Chitrapuri Colony, Jubilee Hills',
-    'Shiva': 'Financial District',
-    'Ramu': 'Manikonda',
-    'Bittu': 'Manikonda, Alkapur, Shaikpet'
+  Mahendra: "Gadipet",
+  Aslam: "Chitrapuri Colony, Jubilee Hills",
+  Shiva: "Financial District",
+  Ramu: "Manikonda",
+  Bittu: "Manikonda, Alkapur, Shaikpet",
 };
 const deliveryBoys = Object.keys(deliveryBoyAreas);
-const areas = ['Jubilee Hills', 'Kukatpally', 'Raidurg', 'Gachibowli', 'Financial District', 'Manikonda', 'Alkapur', 'Gadipet', 'Chitrapuri Colony, Jubilee Hills', 'Manikonda, Alkapur, Shaikpet'];
 
-const mockDatabase = [
-  { id: 1, company_name: 'Daspalla Hotel', area: 'Jubilee Hills', quantity: 0 },
-  { id: 2, company_name: 'Pragathinagar Supermarket', area: 'Kukatpally', quantity: 0 },
-  { id: 3, company_name: 'Phoenix Software', area: 'Wipro circle', quantity: 0 },
-  { id: 4, company_name: 'Dazn Company', area: 'Raidurg', quantity: 0 },
+const areas = [
+  "Jubilee Hills",
+  "Kukatpally",
+  "Raidurg",
+  "Gachibowli",
+  "Financial District",
+  "Manikonda",
+  "Alkapur",
+  "Gadipet",
+  "Chitrapuri Colony, Jubilee Hills",
+  "Manikonda, Alkapur, Shaikpet",
 ];
 
-const CheckIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="20 6 9 17 4 12"></polyline>
-    </svg>
-);
+/* ---------- Utilities: image helpers & PDF generation (unchanged) ---------- */
+const getImageBase64 = async (url) => {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to fetch logo");
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onloadend = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.error("getImageBase64:", err);
+    return null;
+  }
+};
 
-const Step1_HomeDeliveries = ({ onNext, homeDeliveries, setHomeDeliveries, targetDate }) => {
-  const handleDispatchChange = (id, field, value) => {
-    setHomeDeliveries(homeDeliveries.map(d => d.id === id ? { ...d, [field]: value } : d));
+const getImageNaturalSize = (dataUrl) =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+
+const generatePdf = async (payload) => {
+  const { targetDateISO, homeDeliveries, bulkOrders = [], oneTimeOrders = [], grandTotal } = payload;
+  const activeBulk = [...bulkOrders, ...oneTimeOrders].filter((b) => Number(b.quantity) > 0);
+  const activeHD = (homeDeliveries || []).filter((d) => Number(d.liters) > 0);
+
+  const doc = new jsPDF({ unit: "pt" });
+  const leftMargin = 28;
+  const rightMargin = 28;
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // logo
+  const logoBase64 = await getImageBase64("/logo.png");
+  let logoDrawW = 0;
+  let logoDrawH = 0;
+  if (logoBase64) {
+    const size = await getImageNaturalSize(logoBase64);
+    if (size) {
+      const maxLogoW = 90;
+      const maxLogoH = 40;
+      const ratio = size.width / size.height || 1;
+      logoDrawW = Math.min(maxLogoW, size.width);
+      logoDrawH = logoDrawW / ratio;
+      if (logoDrawH > maxLogoH) {
+        logoDrawH = maxLogoH;
+        logoDrawW = logoDrawH * ratio;
+      }
+    } else {
+      logoDrawW = 70;
+      logoDrawH = 30;
+    }
+  }
+
+  const headerTop = 28;
+  const headerHeight = Math.max(logoDrawH, 36);
+  const headerBaseline = headerTop + headerHeight / 2 + 6;
+
+  if (logoBase64 && logoDrawW > 0) {
+    const logoY = headerTop + (headerHeight - logoDrawH) / 2;
+    doc.addImage(logoBase64, "PNG", leftMargin, logoY, logoDrawW, logoDrawH);
+  }
+
+  // Title
+  doc.setFontSize(16);
+  doc.setFont(undefined, "bold");
+  const centerX = pageWidth / 2;
+  doc.text("Daily Indent Report", centerX, headerBaseline, { align: "center" });
+
+  // Date (right aligned)
+  const dateText = targetDateISO ? new Date(targetDateISO).toLocaleDateString("en-IN") : new Date().toLocaleDateString("en-IN");
+  doc.setFontSize(10);
+  doc.setFont(undefined, "normal");
+  doc.text(dateText, pageWidth - rightMargin, headerBaseline, { align: "right" });
+
+  // separator
+  const sepY = headerTop + headerHeight + 10;
+  doc.setDrawColor(220);
+  doc.setLineWidth(0.5);
+  doc.line(leftMargin, sepY, pageWidth - rightMargin, sepY);
+
+  let cursorY = sepY + 16;
+
+  // Home deliveries table
+  autoTable(doc, {
+    startY: cursorY,
+    head: [["Delivery Boy", "Area", "Milk Carried (L)"]],
+    body: activeHD.map((d) => [d.deliveryBoy, d.area || "-", d.liters || 0]),
+    headStyles: { fillColor: "#374151", textColor: "#FFFFFF", fontStyle: "bold" },
+    styles: { fontSize: 10, cellPadding: 6 },
+    columnStyles: { 0: { cellWidth: 120 }, 1: { cellWidth: "auto" }, 2: { cellWidth: 70, halign: "right" } },
+    foot: [["Total", "", `${activeHD.reduce((s, d) => s + (Number(d.liters) || 0), 0)}`]],
+    footStyles: { fillColor: "#F3F4F6", textColor: "#111827", fontStyle: "bold" },
+    showFoot: "last_page",
+    margin: { left: leftMargin, right: rightMargin },
+  });
+
+  cursorY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 18 : cursorY + 120;
+
+  // Bulk orders table
+  doc.setFontSize(12);
+  doc.setFont(undefined, "bold");
+  doc.text("Bulk Orders", leftMargin, cursorY);
+  autoTable(doc, {
+    startY: cursorY + 8,
+    head: [["Company Name", "Area", "Quantity (L)"]],
+    body: activeBulk.map((o) => [o.company_name || "-", o.area || "-", o.quantity || 0]),
+    headStyles: { fillColor: "#374151", textColor: "#FFFFFF", fontStyle: "bold" },
+    styles: { fontSize: 10, cellPadding: 6 },
+    columnStyles: { 0: { cellWidth: 180 }, 1: { cellWidth: "auto" }, 2: { cellWidth: 70, halign: "right" } },
+    foot: [["Total", "", `${activeBulk.reduce((s, b) => s + (Number(b.quantity) || 0), 0)}`]],
+    footStyles: { fillColor: "#F3F4F6", textColor: "#111827", fontStyle: "bold" },
+    showFoot: "last_page",
+    margin: { left: leftMargin, right: rightMargin },
+  });
+
+  const yGrand = doc.lastAutoTable ? doc.lastAutoTable.finalY + 18 : cursorY + 80;
+  doc.setFontSize(12);
+  doc.setTextColor("#F59E0B");
+  doc.setFont(undefined, "bold");
+  doc.text(`Grand Total Milk Dispatched: ${grandTotal} L`, leftMargin, yGrand);
+
+  const filename = `Indent_Report_${dateText.replace(/\s+/g, "_")}.pdf`;
+  doc.save(filename);
+};
+
+/* ---------- Styles (mobile-first) ---------- */
+const styles = {
+  // note: paddingTop/paddingBottom increased so global fixed header/footer won't overlap
+  page: {
+    padding: 16,
+    paddingTop: 96, // leave space for global Header
+    paddingBottom: 96, // leave space for global Footer
+    maxWidth: 420,
+    margin: "0 auto",
+    fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial",
+    background: "#FAFAFB",
+    minHeight: "100vh",
+    boxSizing: "border-box",
+  },
+  card: { background: "#FFFFFF", borderRadius: 12, padding: 14, marginBottom: 14, border: "1px solid #E5E7EB" },
+  sectionTitle: { fontSize: 16, fontWeight: 700, color: "#111827", marginBottom: 6 },
+  smallText: { color: "#6B7280", fontSize: 13 },
+  dateInput: { padding: "10px 12px", borderRadius: 10, border: "1px solid #D1D5DB", minWidth: 140 },
+  row: { display: "flex", gap: 8, alignItems: "center" },
+  deliveryBoyBox: { flex: 1, padding: 10, borderRadius: 10, background: "#F3F4F6", fontWeight: 600, color: "#111827" },
+  select: { padding: "10px 12px", borderRadius: 10, border: "1px solid #D1D5DB", width: "100%" },
+  inputNumber: { padding: "10px 12px", borderRadius: 10, border: "1px solid #D1D5DB", width: 100, textAlign: "center" },
+
+  // Buttons
+  buttonPrimary: { width: "100%", padding: 14, borderRadius: 12, background: "#F59E0B", color: "#fff", fontWeight: 700, border: "none", fontSize: 15 },
+  buttonSecondary: { width: "100%", padding: 12, borderRadius: 12, background: "#fff", color: "#374151", border: "1px solid #D1D5DB", fontWeight: 700 },
+
+  stepperContainer: { display: "flex", gap: 8, marginBottom: 12, alignItems: "center", justifyContent: "space-between" },
+  stepItem: { flex: 1, textAlign: "center", padding: 8, borderRadius: 10, background: "#fff", border: "1px solid #E5E7EB" },
+  stepActive: { background: "#F59E0B", color: "#fff", fontWeight: 700 },
+
+  centered: { textAlign: "center", padding: 16, color: "#6B7280" },
+  modalOverlay: { position: "fixed", left: 0, right: 0, bottom: 0, top: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-end", zIndex: 120 },
+  modalSheet: { width: "100%", background: "#fff", borderTopLeftRadius: 12, borderTopRightRadius: 12, padding: 16, maxHeight: "86vh", overflow: "auto" },
+  modalInput: { width: "100%", padding: "12px 14px", borderRadius: 10, border: "1px solid #D1D5DB", marginBottom: 10 },
+
+  listItem: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #F3F4F6" },
+  reviewRow: { display: "flex", justifyContent: "space-between", marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid #F3F4F6" },
+  reviewTotal: { textAlign: "right", marginTop: 8, fontSize: 15, color: "#111827" },
+};
+
+/* ---------- Step 1: Home Deliveries (simpler footer—no position:fixed) ---------- */
+const Step1 = ({ homeDeliveries, setHomeDeliveries, targetDateISO, setTargetDateISO, onNext }) => {
+  const handleChange = (id, field, value) => {
+    setHomeDeliveries(homeDeliveries.map((h) => (h.id === id ? { ...h, [field]: value } : h)));
   };
-  const totalHomeDeliveryMilk = homeDeliveries.reduce((sum, d) => sum + (Number(d.liters) || 0), 0);
-  const canProceed = homeDeliveries.some(d => Number(d.liters) > 0); 
+  const total = homeDeliveries.reduce((s, d) => s + (Number(d.liters) || 0), 0);
+  const canProceed = homeDeliveries.some((d) => Number(d.liters) > 0);
+
+  const formatted = targetDateISO ? new Date(targetDateISO).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) : "";
+
   return (
     <div style={styles.card}>
-        <h2 style={styles.cardTitle}>Home Deliveries</h2>
-        <p style={styles.dateDisplay}>{targetDate}</p>
-        <div style={styles.listContainer}>
-            <div style={styles.listHeaderRow}>
-                <div style={{...styles.listHeaderCell, flex: 2.5}}>DELIVERY BOY</div>
-                <div style={{...styles.listHeaderCell, flex: 3}}>AREA</div>
-                <div style={{...styles.listHeaderCell, flex: 1.5, textAlign: 'center'}}>LITERS</div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={styles.sectionTitle}>Delivery Boys</div>
+        <div style={styles.smallText}>Next Indent Date • {formatted}</div>
+      </div>
+
+      <div style={{ marginTop: 10, marginBottom: 12 }}>
+        <label style={{ display: "block", marginBottom: 6, color: "#6B7280", fontSize: 13 }}>Change Date</label>
+        <input type="date" value={targetDateISO || ""} onChange={(e) => setTargetDateISO(e.target.value)} style={styles.dateInput} />
+      </div>
+
+      <div>
+        {homeDeliveries.map((d) => (
+          <div key={d.id} style={{ marginBottom: 10 }}>
+            <div style={styles.row}>
+              <div style={styles.deliveryBoyBox}>{d.deliveryBoy}</div>
             </div>
-            {homeDeliveries.map((dispatch) => (
-              <div key={dispatch.id} style={styles.dispatchRow}>
-                <div style={styles.deliveryBoyCell}>{dispatch.deliveryBoy}</div>
-                <select value={dispatch.area} onChange={(e) => handleDispatchChange(dispatch.id, 'area', e.target.value)} style={{...styles.input, flex: 3}}>
-                  <option value="">Select Area</option>
-                  {areas.map(area => <option key={area} value={area}>{area}</option>)}
-                </select>
-                <input type="number" placeholder="0" value={dispatch.liters} onChange={(e) => handleDispatchChange(dispatch.id, 'liters', e.target.value)} style={{...styles.input, flex: 1.5, textAlign: 'center'}} />
-              </div>
-            ))}
-        </div>
-        <div style={styles.stepActions}>
-            <div style={styles.totalSummary}>
-                <span>Total Milk</span>
-                <strong>{totalHomeDeliveryMilk} L</strong>
+            <div style={{ height: 8 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <select value={d.area} onChange={(e) => handleChange(d.id, "area", e.target.value)} style={styles.select}>
+                <option value="">Select area</option>
+                {areas.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+              <input type="number" placeholder="L" value={d.liters} onChange={(e) => handleChange(d.id, "liters", e.target.value)} style={styles.inputNumber} />
             </div>
-            <button onClick={onNext} style={canProceed ? {...styles.baseButton, ...styles.nextButton} : {...styles.baseButton, ...styles.disabledButton}} disabled={!canProceed}>
-              Next: Bulk Orders
-            </button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 6 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ color: "#6B7280" }}>Total Milk</div>
+          <div style={{ fontWeight: 700 }}>{total} L</div>
         </div>
+
+        {/* Footer buttons inside the card so nothing is fixed/overlapping */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => window.history.back()} style={{ ...styles.buttonSecondary, flex: 1 }}>
+            Cancel
+          </button>
+          <button onClick={onNext} disabled={!canProceed} style={canProceed ? { ...styles.buttonPrimary, flex: 1 } : { ...styles.buttonPrimary, opacity: 0.6, flex: 1 }}>
+            Continue 
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
 
-const Step2_BulkOrders = ({ onNext, onBack, targetDate }) => {
-  const [bulkOrders, setBulkOrders] = useState([]);
-  const [oneTimeOrders, setOneTimeOrders] = useState([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+/* ---------- Step 2: Bulk Orders (Back + Review same line) ---------- */
+const Step2 = ({ onBack, onNext, targetDateISO }) => {
+  const [customers, setCustomers] = useState([]);
+  const [oneTime, setOneTime] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [areaFilter, setAreaFilter] = useState("");
+  const [showModal, setShowModal] = useState(false);
+
   useEffect(() => {
-    const fetchBulkOrders = () => {
-        setIsLoading(true);
-        setError(null);
-        setTimeout(() => {
-            try {
-                setBulkOrders(mockDatabase);
-                setIsLoading(false);
-            } catch (err) {
-                setError('Failed to fetch bulk customers.');
-                setIsLoading(false);
-            }
-        }, 1500);
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const q = areaFilter ? `?area=${encodeURIComponent(areaFilter)}` : "";
+        const res = await fetch(`/api/bulk-customers${q}`);
+
+        if (res.ok) {
+          const payload = await res.json();
+          const rows = Array.isArray(payload) ? payload : payload?.rows ?? [];
+          const mapped = (rows || []).map((r) => ({
+            id: r.company_id,
+            company_name: r.company_name,
+            area: r.area,
+            quantity: Number(r.default_quantity_weekdays || 0),
+          }));
+          if (mounted) setCustomers(mapped);
+          setLoading(false);
+          return;
+        } else {
+          // non-OK response: log and fall back
+          console.warn(`[Step2] /api/bulk-customers returned status ${res.status}`);
+        }
+      } catch (err) {
+        console.warn("[Step2] fetch /api/bulk-customers failed:", err);
+      }
+
+      // fallback: try localStorage
+      try {
+        const raw = localStorage.getItem("bulkCustomers");
+        if (raw) {
+          const local = JSON.parse(raw);
+          const mappedLocal = (Array.isArray(local) ? local : []).map((r) => ({
+            id: r.company_id ?? r.id,
+            company_name: r.company_name ?? r.name ?? r.company_name ?? "Unnamed",
+            area: r.area ?? "",
+            quantity: Number(r.default_quantity_weekdays ?? r.quantity ?? 0),
+          }));
+          if (mounted) setCustomers(mappedLocal);
+        } else {
+          if (mounted) setCustomers([]);
+        }
+      } catch (err) {
+        console.warn("[Step2] fallback localStorage parse failed:", err);
+        if (mounted) setCustomers([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     };
-    fetchBulkOrders();
-  }, []);
-  const handleQuantityChange = (id, value) => {
-      setBulkOrders(bulkOrders.map(order => order.id === id ? {...order, quantity: parseInt(value) || 0} : order));
-  };
-  const handleAddOneTimeOrder = (newOrder) => setOneTimeOrders([...oneTimeOrders, newOrder]);
-  const handleDeleteOneTimeOrder = (id) => setOneTimeOrders(oneTimeOrders.filter(o => o.id !== id));
-  const totalBulkMilk = [...bulkOrders, ...oneTimeOrders].reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-  const handleFinalize = () => {
-    onNext({ bulkOrders, oneTimeOrders, totalBulkMilk });
-  };
-  const renderContent = () => {
-    if (isLoading) { return <div style={styles.centeredMessage}>Loading customers...</div>; }
-    if (error) { return <div style={styles.centeredMessage}>{error}</div>; }
-    return (
-      <>
-        {oneTimeOrders.length > 0 && (
-          <div style={styles.card}>
-              <h3 style={styles.listSubHeader}>One-Time Orders</h3>
-              {oneTimeOrders.map(order => (
-                  <div key={order.id} style={styles.orderRow}>
-                      <div>
-                          <p style={styles.companyName}>{order.company_name}</p>
-                          <p style={styles.areaName}>{order.area}</p>
-                      </div>
-                      <div style={styles.orderActions}>
-                          <span style={styles.quantityText}>{order.quantity} L</span>
-                          <button onClick={() => handleDeleteOneTimeOrder(order.id)} style={styles.deleteButton}>&times;</button>
-                      </div>
-                  </div>
-              ))}
-          </div>
-        )}
-        <div style={styles.card}>
-            <h3 style={styles.listSubHeader}>Regular Bulk Customers</h3>
-            {bulkOrders.map(order => (
-                <div key={order.id} style={styles.orderRow}>
-                    <div>
-                        <p style={styles.companyName}>{order.company_name}</p>
-                        <p style={styles.areaName}>{order.area}</p>
-                    </div>
-                    <div style={styles.orderActions}>
-                        <input type="number" placeholder="0" value={order.quantity} onChange={(e) => handleQuantityChange(order.id, e.target.value)} style={{...styles.input, width: '100px', textAlign: 'center'}}/>
-                    </div>
-                </div>
-            ))}
+
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [areaFilter]);
+
+  const changeQty = (id, v) => setCustomers(customers.map((c) => (c.id === id ? { ...c, quantity: Number(v || 0) } : c)));
+  const addOneTime = (item) => setOneTime([item, ...oneTime]);
+  const delOneTime = (id) => setOneTime(oneTime.filter((o) => o.id !== id));
+  const total = [...customers, ...oneTime].reduce((s, x) => s + (Number(x.quantity) || 0), 0);
+
+  return (
+    <div style={styles.card}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+        <div>
+          <div style={styles.sectionTitle}>Bulk Orders</div>
+          <div style={styles.smallText}>{targetDateISO ? new Date(targetDateISO).toLocaleDateString("en-IN") : ""}</div>
         </div>
-      </>
-    );
+        <div style={{ width: 110 }}>
+          <select value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)} style={styles.select}>
+            <option value="">All areas</option>
+            {areas.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={styles.centered}>Loading customers…</div>
+      ) : (
+        <>
+          <div style={{ marginBottom: 10 }}>
+            <button onClick={() => setShowModal(true)} style={{ ...styles.buttonSecondary, marginBottom: 12 }}>
+              + Add One-time Order
+            </button>
+
+            {oneTime.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>One-time</div>
+                {oneTime.map((o) => (
+                  <div key={o.id} style={styles.listItem}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{o.company_name}</div>
+                      <div style={{ color: "#6B7280", fontSize: 13 }}>{o.area}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ fontWeight: 700 }}>{o.quantity} L</div>
+                      <button onClick={() => delOneTime(o.id)} style={{ padding: 8, borderRadius: 8, background: "#FEE2E2", border: "none" }}>
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Regular Customers</div>
+              {customers.map((c) => (
+                <div key={c.id} style={styles.listItem}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{c.company_name}</div>
+                    <div style={{ color: "#6B7280", fontSize: 13 }}>{c.area}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="number" value={c.quantity} onChange={(e) => changeQty(c.id, e.target.value)} style={{ width: 90, padding: 8, borderRadius: 8, border: "1px solid #D1D5DB", textAlign: "center" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Back + Review on same row */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+            <button
+              onClick={onBack}
+              style={{
+                flex: 1,
+                padding: 12,
+                borderRadius: 12,
+                background: "#fff",
+                color: "#374151",
+                border: "1px solid #D1D5DB",
+                fontWeight: 700,
+              }}
+            >
+              Back
+            </button>
+
+            <button
+              onClick={() => onNext({ bulkOrders: customers, oneTimeOrders: oneTime, totalBulkMilk: total })}
+              style={{
+                flex: 1,
+                padding: 12,
+                borderRadius: 12,
+                background: "#F59E0B",
+                color: "#fff",
+                border: "none",
+                fontWeight: 700,
+              }}
+            >
+              Review
+            </button>
+          </div>
+        </>
+      )}
+
+      {showModal && <AddOneTimeModal onClose={() => setShowModal(false)} onAdd={addOneTime} />}
+    </div>
+  );
+};
+
+/* ---------- Add One-time modal ---------- */
+const AddOneTimeModal = ({ onClose, onAdd }) => {
+  const [company, setCompany] = useState("");
+  const [area, setAreaVal] = useState("");
+  const [qty, setQty] = useState("");
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!company || !qty) return;
+    onAdd({ id: `ot-${Date.now()}`, company_name: company, area: area || "-", quantity: Number(qty) });
+    onClose();
   };
+
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontWeight: 700 }}>Add One-time Order</div>
+          <button onClick={onClose} style={{ border: "none", background: "transparent", fontSize: 20 }}>
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={submit}>
+          <input placeholder="Company name" value={company} onChange={(e) => setCompany(e.target.value)} style={styles.modalInput} />
+          <input placeholder="Area (optional)" value={area} onChange={(e) => setAreaVal(e.target.value)} style={styles.modalInput} />
+          <input placeholder="Quantity (L)" value={qty} onChange={(e) => setQty(e.target.value)} style={styles.modalInput} type="number" />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={onClose} style={{ ...styles.buttonSecondary, flex: 1 }}>
+              Cancel
+            </button>
+            <button type="submit" style={{ ...styles.buttonPrimary, flex: 1 }}>
+              Add
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+/* ---------- Step 3: Review ---------- */
+const Step3 = ({ homeDeliveries, bulkOrderData, targetDateISO, onBack, onFinalize }) => {
+  const activeHD = homeDeliveries.filter((d) => Number(d.liters) > 0);
+  const activeBulk = [...(bulkOrderData.bulkOrders || []), ...(bulkOrderData.oneTimeOrders || [])].filter((b) => Number(b.quantity) > 0);
+  const sumHD = activeHD.reduce((s, d) => s + (Number(d.liters) || 0), 0);
+  const sumBulk = bulkOrderData.totalBulkMilk || 0;
+  const grand = sumHD + sumBulk;
+
+  return (
+    <div style={styles.card}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={styles.sectionTitle}>Review</div>
+        <div style={styles.smallText}>{targetDateISO ? new Date(targetDateISO).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) : ""}</div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Delivery Boys</div>
+        {activeHD.map((d) => (
+          <div key={d.id} style={styles.reviewRow}>
+            <div>{d.deliveryBoy} ({d.area || "—"})</div>
+            <div style={{ fontWeight: 700 }}>{d.liters} L</div>
+          </div>
+        ))}
+        <div style={styles.reviewTotal}>Total: <strong>{sumHD} L</strong></div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Bulk Orders</div>
+        {activeBulk.map((d, i) => (
+          <div key={d.id ?? `b-${i}`} style={styles.reviewRow}>
+            <div>{d.company_name} ({d.area || "—"})</div>
+            <div style={{ fontWeight: 700 }}>{d.quantity} L</div>
+          </div>
+        ))}
+        <div style={styles.reviewTotal}>Total: <strong>{sumBulk} L</strong></div>
+      </div>
+
+      <div style={{ ...styles.row, justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontWeight: 700 }}>Grand Total</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#111827" }}>{grand} L</div>
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+        <button onClick={onBack} style={{ ...styles.buttonSecondary, flex: 1 }}>Back</button>
+        <button onClick={() => onFinalize({ targetDateISO, homeDeliveries, bulkOrders: bulkOrderData.bulkOrders, oneTimeOrders: bulkOrderData.oneTimeOrders, grandTotal: grand })} style={{ ...styles.buttonPrimary, flex: 1 }}>Finalize Indent</button>
+      </div>
+    </div>
+  );
+};
+
+/* ---------- Step 4: Submitted (readonly) ---------- */
+const Step4_Submitted = ({ payload, onEdit, onDownload }) => {
+  const { targetDateISO, homeDeliveries = [], bulkOrders = [], oneTimeOrders = [], grandTotal = 0 } = payload || {};
+  const activeHD = (homeDeliveries || []).filter((d) => Number(d.liters) > 0);
+  const activeBulk = [...(bulkOrders || []), ...(oneTimeOrders || [])].filter((b) => Number(b.quantity) > 0);
+
+  return (
+    <div style={styles.card}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={styles.sectionTitle}>Submitted Indent</div>
+        <div style={styles.smallText}>{targetDateISO ? new Date(targetDateISO).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) : ""}</div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Delivery Boys</div>
+        {activeHD.length ? activeHD.map((d) => (
+          <div key={d.id} style={styles.reviewRow}>
+            <div>{d.deliveryBoy} ({d.area || "—"})</div>
+            <div style={{ fontWeight: 700 }}>{d.liters} L</div>
+          </div>
+        )) : <div style={styles.centered}>No home deliveries recorded.</div>}
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Bulk Orders</div>
+        {activeBulk.length ? activeBulk.map((b, i) => (
+          <div key={b.id ?? `sb-${i}`} style={styles.reviewRow}>
+            <div>{b.company_name} ({b.area || "—"})</div>
+            <div style={{ fontWeight: 700 }}>{b.quantity} L</div>
+          </div>
+        )) : <div style={styles.centered}>No bulk orders recorded.</div>}
+      </div>
+
+      <div style={{ ...styles.row, justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontWeight: 700 }}>Grand Total</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#111827" }}>{grandTotal} L</div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={onEdit} style={{ ...styles.buttonSecondary, flex: 1 }}>Back to Edit</button>
+        <button onClick={() => onDownload(payload)} style={{ ...styles.buttonPrimary, flex: 1 }}>Download PDF</button>
+      </div>
+    </div>
+  );
+};
+
+/* ---------- Page wrapper ---------- */
+export default function IndentPage() {
+  const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [targetDateISO, setTargetDateISO] = useState("");
+  const [homeDeliveries, setHomeDeliveries] = useState(
+    deliveryBoys.map((b, i) => ({ id: i + 1, deliveryBoy: b, area: deliveryBoyAreas[b] || "", liters: "" }))
+  );
+  const [bulkOrderData, setBulkOrderData] = useState({ bulkOrders: [], oneTimeOrders: [], totalBulkMilk: 0 });
+  const [submittedPayload, setSubmittedPayload] = useState(null);
+
+  useEffect(() => {
+    const now = new Date();
+    if (now.getHours() >= 20) now.setDate(now.getDate() + 1);
+    setTargetDateISO(now.toISOString().split("T")[0]);
+  }, []);
+
+  const goNextFromHome = () => setStep(2);
+  const goNextFromBulk = (data) => {
+    setBulkOrderData(data);
+    setStep(3);
+  };
+
+  const handleFinalize = (payload) => {
+    setSubmittedPayload(payload);
+    setStep(4);
+  };
+
+  const handleDownloadFromSubmitted = async (payload) => {
+    try {
+      await generatePdf(payload);
+    } catch (err) {
+      console.error("Download PDF failed", err);
+      alert("Failed to generate PDF. See console for details.");
+    }
+  };
+
+  const backToEdit = () => setStep(3);
+
   return (
     <>
-      <AddOrderModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onAddOrder={handleAddOneTimeOrder} />
-      <div style={styles.toolbar}>
-        <div>
-          <h2 style={styles.cardTitle}>Bulk Orders</h2>
-          <p style={styles.dateDisplay}>{targetDate}</p>
+      <Head>
+        <title>Indent — Mobile</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+      </Head>
+
+      {/* No internal fixed header here — the app-level Header is expected to be outside */}
+      <div style={styles.page}>
+        <div style={styles.stepperContainer}>
+          <div style={{ ...styles.stepItem, ...(step === 1 ? styles.stepActive : {}) }}>Boys</div>
+          <div style={{ ...styles.stepItem, ...(step === 2 ? styles.stepActive : {}) }}>Bulk</div>
+          <div style={{ ...styles.stepItem, ...(step === 3 ? styles.stepActive : {}) }}>Review</div>
+          <div style={{ ...styles.stepItem, ...(step === 4 ? styles.stepActive : {}) }}>Submit</div>
         </div>
-        <button onClick={() => setIsModalOpen(true)} style={{...styles.baseButton, ...styles.addButtonSmall}}>+ Add Order</button>
-      </div>
-      {renderContent()}
-      <div style={styles.stepActions}>
-        <div style={styles.totalSummary}>
-            <span>Total Bulk Milk</span>
-            <strong>{totalBulkMilk} L</strong>
-        </div>
-        <div>
-            <button onClick={onBack} style={{...styles.baseButton, ...styles.backButton, marginRight: '1rem'}}>Back</button>
-            <button onClick={handleFinalize} style={{...styles.baseButton, ...styles.nextButton}}>Next: Review</button>
-        </div>
+
+        {step === 1 && <Step1 homeDeliveries={homeDeliveries} setHomeDeliveries={setHomeDeliveries} targetDateISO={targetDateISO} setTargetDateISO={setTargetDateISO} onNext={goNextFromHome} />}
+        {step === 2 && <Step2 onBack={() => setStep(1)} onNext={goNextFromBulk} targetDateISO={targetDateISO} />}
+        {step === 3 && <Step3 homeDeliveries={homeDeliveries} bulkOrderData={bulkOrderData} targetDateISO={targetDateISO} onBack={() => setStep(2)} onFinalize={handleFinalize} />}
+        {step === 4 && <Step4_Submitted payload={submittedPayload} onEdit={backToEdit} onDownload={handleDownloadFromSubmitted} />}
+
+        <div style={{ height: 8 }} />
       </div>
     </>
   );
-};
-
-const Step3_Review = ({ onBack, homeDeliveries, bulkOrderData, targetDate }) => {
-    const router = useRouter(); 
-
-    const activeHomeDeliveries = homeDeliveries.filter(d => d.liters > 0);
-    const activeBulkOrders = [...bulkOrderData.bulkOrders, ...bulkOrderData.oneTimeOrders].filter(o => o.quantity > 0);
-    
-    const totalHomeDeliveryMilk = activeHomeDeliveries.reduce((sum, d) => sum + (Number(d.liters) || 0), 0);
-    const totalBulkOrderMilk = bulkOrderData.totalBulkMilk;
-    const grandTotal = totalHomeDeliveryMilk + totalBulkOrderMilk;
-
-    const handleSubmitAndDownload = async () => {
-        const doc = new jsPDF();
-
-        // 1. Fetch the logo from the public folder
-        const logoUrl = '/logo.png';
-        const logoData = await getImageBase64(logoUrl);
-
-        // 2. Define color palette
-        const primaryColor = '#F59E0B';
-        const headerBgColor = '#374151';
-        const headerTextColor = '#FFFFFF';
-        const footerBgColor = '#F3F4F6';
-        const footerTextColor = '#111827';
-
-        // 3. Add the logo to the PDF (if it was loaded successfully)
-        if (logoData) {
-            doc.addImage(logoData, 'PNG', 14, 12, 35, 12);
-        }
-
-        // 4. Add text and tables (adjusting for logo space)
-        doc.setFontSize(20);
-        doc.text('Daily Indent Report', 14, 35);
-        doc.setFontSize(12);
-        doc.text(`Date: ${targetDate}`, 14, 42);
-
-        autoTable(doc, {
-            startY: 50,
-            head: [['Delivery Boy', 'Area', 'Milk Carried (L)']],
-            body: activeHomeDeliveries.map(d => [d.deliveryBoy, d.area, d.liters]),
-            headStyles: {
-                fillColor: headerBgColor,
-                textColor: headerTextColor,
-                fontStyle: 'bold',
-            },
-            foot: [['Total', '', `${totalHomeDeliveryMilk}`]],
-            footStyles: {
-                fillColor: footerBgColor,
-                textColor: footerTextColor,
-                fontStyle: 'bold',
-            },
-            showFoot: 'last_page',
-        });
-
-        const bulkOrdersStartY = doc.lastAutoTable.finalY + 15;
-        doc.text('Bulk Orders', 14, bulkOrdersStartY);
-
-        autoTable(doc, {
-            startY: bulkOrdersStartY + 8,
-            head: [['Company Name', 'Area', 'Quantity (L)']],
-            body: activeBulkOrders.map(item => [item.company_name, item.area, item.quantity]),
-            headStyles: {
-                fillColor: headerBgColor,
-                textColor: headerTextColor,
-                fontStyle: 'bold',
-            },
-            foot: [['Total', '', `${totalBulkOrderMilk}`]],
-            footStyles: {
-                fillColor: footerBgColor,
-                textColor: footerTextColor,
-                fontStyle: 'bold',
-            },
-            showFoot: 'last_page',
-        });
-        
-        doc.setFontSize(14);
-        doc.setTextColor(primaryColor);
-        doc.setFont(undefined, 'bold');
-        doc.text(`Grand Total Milk Dispatched: ${grandTotal} L`, 14, doc.lastAutoTable.finalY + 15);
-        
-        doc.save(`Indent_Report_${new Date().toISOString().split('T')[0]}.pdf`);
-
-        alert('Indent submitted successfully!');
-        router.push('/dashboard');
-    };
-
-    return (
-        <div style={styles.card}>
-            <h2 style={styles.cardTitle}>Final Indent Review</h2>
-            <p style={styles.dateDisplay}>{targetDate}</p>
-            
-            <div style={styles.reviewSection}>
-                <h3 style={styles.listSubHeader}>Home Deliveries Summary</h3>
-                {activeHomeDeliveries.map(d => <div style={styles.reviewItem} key={d.id}><span>{d.deliveryBoy} ({d.area})</span> <span>{d.liters} L</span></div>)}
-                <div style={styles.reviewTotal}>Total: <strong>{totalHomeDeliveryMilk} L</strong></div>
-            </div>
-
-            <div style={styles.reviewSection}>
-                <h3 style={styles.listSubHeader}>Bulk Orders Summary</h3>
-                {activeBulkOrders.map(d => <div style={styles.reviewItem} key={d.id}><span>{d.company_name} ({d.area})</span> <span>{d.quantity} L</span></div>)}
-                <div style={styles.reviewTotal}>Total: <strong>{totalBulkOrderMilk} L</strong></div>
-            </div>
-
-             <div style={styles.grandTotalSection}>
-                <span>Grand Total</span>
-                <strong>{grandTotal} L</strong>
-            </div>
-
-            <div style={styles.stepActions}>
-                <button onClick={onBack} style={{...styles.baseButton, ...styles.backButton}}>Back</button>
-                <button onClick={handleSubmitAndDownload} style={{...styles.baseButton, ...styles.downloadButton}}>
-                    Submit & Download PDF
-                </button>
-            </div>
-        </div>
-    );
-};
-
-export default function IndentPage() {
-  const [currentStep, setCurrentStep] = useState(1);
-  const [targetDate, setTargetDate] = useState('');
-  const [homeDeliveries, setHomeDeliveries] = useState(
-    deliveryBoys.map((boy, index) => ({ id: index, deliveryBoy: boy, area: deliveryBoyAreas[boy] || '', liters: '' }))
-  );
-  const [bulkOrderData, setBulkOrderData] = useState({ bulkOrders: [], oneTimeOrders: [], totalBulkMilk: 0 });
-  useEffect(() => {
-    const today = new Date();
-    const isAfter8PM = today.getHours() >= 20;
-    const dateToUse = new Date();
-    if (isAfter8PM) { dateToUse.setDate(dateToUse.getDate() + 1); }
-    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    setTargetDate(dateToUse.toLocaleDateString('en-IN', options));
-  }, []);
-  const handleNextStep1 = () => setCurrentStep(2);
-  const handleNextStep2 = (data) => {
-    setBulkOrderData(data);
-    setCurrentStep(3);
-  };
-  const handleBack = () => setCurrentStep(prev => prev - 1);
-  const steps = ['Home Deliveries', 'Bulk Orders', 'Review'];
-  const renderStep = () => {
-    switch (currentStep) {
-      case 1: return <Step1_HomeDeliveries onNext={handleNextStep1} homeDeliveries={homeDeliveries} setHomeDeliveries={setHomeDeliveries} targetDate={targetDate} />;
-      case 2: return <Step2_BulkOrders onNext={handleNextStep2} onBack={handleBack} targetDate={targetDate} />;
-      case 3: return <Step3_Review onBack={handleBack} homeDeliveries={homeDeliveries} bulkOrderData={bulkOrderData} targetDate={targetDate} />;
-      default: return null;
-    }
-  };
-  return (
-    <div style={styles.pageContainer}>
-        <div style={styles.stepperContainer}>
-            {steps.map((step, index) => {
-                const stepNumber = index + 1;
-                const isActive = currentStep === stepNumber;
-                const isCompleted = currentStep > stepNumber;
-                return (
-                  <React.Fragment key={step}>
-                    <div style={styles.stepItem}>
-                      <div style={{ ...styles.stepCircle, ...(isActive && styles.activeStepCircle), ...(isCompleted && styles.completedStepCircle) }}>
-                        {isCompleted ? <CheckIcon /> : stepNumber}
-                      </div>
-                      <div style={{ ...styles.stepLabel, ...(isActive && styles.activeStepLabel) }}>{step}</div>
-                    </div>
-                    {stepNumber < steps.length && (<div style={{ ...styles.stepConnector, ...(isCompleted && styles.completedStepConnector) }}></div>)}
-                  </React.Fragment>
-                );
-            })}
-        </div>
-        <main>{renderStep()}</main>
-    </div>
-  );
 }
-
-const AddOrderModal = ({ isOpen, onClose, onAddOrder }) => {
-    const [companyName, setCompanyName] = useState('');
-    const [area, setArea] = useState('');
-    const [quantity, setQuantity] = useState('');
-    if (!isOpen) return null;
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if(!companyName || !quantity) return;
-        onAddOrder({ id: `custom-${Date.now()}`, company_name: companyName, area, quantity: Number(quantity) });
-        setCompanyName(''); setArea(''); setQuantity('');
-        onClose();
-    };
-    return (
-        <div style={styles.modalOverlay} onClick={onClose}>
-            <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
-                <h2 style={styles.cardTitle}>Add One-Time Bulk Order</h2>
-                <div style={styles.formGroup}>
-                    <label style={styles.label}>Company Name</label>
-                    <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} style={styles.input} required />
-                </div>
-                <div style={styles.formGroup}>
-                    <label style={styles.label}>Area (Optional)</label>
-                    <input type="text" value={area} onChange={e => setArea(e.target.value)} style={styles.input} />
-                </div>
-                <div style={styles.formGroup}>
-                    <label style={styles.label}>Quantity (L)</label>
-                    <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} style={styles.input} required />
-                </div>
-                <div style={styles.modalFooter}>
-                    <button onClick={onClose} style={{...styles.baseButton, ...styles.backButton}}>Cancel</button>
-                    <button onClick={handleSubmit} style={{...styles.baseButton, ...styles.nextButton}}>Add Order</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const styles = {
-    pageContainer: { maxWidth: '640px', margin: '0 auto', padding: '1rem', paddingTop: '80px', fontFamily: "'Inter', sans-serif", backgroundColor: '#F9FAFB' },
-    card: { backgroundColor: '#FFFFFF', borderRadius: '12px', padding: '1.5rem', border: '1px solid #E5E7EB', marginBottom: '1.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' },
-    toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' },
-    cardTitle: { marginTop: 0, marginBottom: '0.25rem', fontSize: '1.5rem', color: '#111827', fontWeight: 600 },
-    dateDisplay: { marginTop: 0, marginBottom: '1.5rem', fontSize: '1rem', color: '#4B5563', fontWeight: '600' },
-    stepperContainer: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '2.5rem', padding: '0 0.5rem' },
-    stepItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', width: '100px', flexShrink: 0 },
-    stepCircle: { width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', border: '2px solid #D1D5DB', color: '#6B7280', fontWeight: '600', transition: 'all 0.3s ease-in-out', fontSize: '0.9rem' },
-    activeStepCircle: { borderColor: '#F59E0B', color: '#F59E0B' },
-    completedStepCircle: { backgroundColor: '#F59E0B', borderColor: '#F59E0B', color: '#FFFFFF' },
-    stepLabel: { marginTop: '10px', color: '#6B7280', fontWeight: '500', fontSize: '0.875rem' },
-    activeStepLabel: { color: '#111827', fontWeight: '600' },
-    stepConnector: { flex: 1, height: '2px', backgroundColor: '#E5E7EB', margin: '0 -1rem', transform: 'translateY(17px)', transition: 'background-color 0.3s ease-in-out' },
-    completedStepConnector: { backgroundColor: '#F59E0B' },
-    formGroup: { marginBottom: '1.25rem' },
-    label: { display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#374151' },
-    input: { boxSizing: 'border-box', width: '100%', padding: '10px 14px', border: '1px solid #D1D5DB', borderRadius: '8px', fontSize: '1rem', backgroundColor: '#F9FAFB' },
-    listContainer: { borderTop: '1px solid #E5E7EB', paddingTop: '1.5rem' },
-    listHeaderRow: { display: 'flex', gap: '1rem', marginBottom: '0.5rem', padding: '0 0.5rem' },
-    listHeaderCell: { color: '#6B7280', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' },
-    dispatchRow: { display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' },
-    deliveryBoyCell: { flex: 2.5, padding: '10px 14px', fontWeight: '500', color: '#111827', backgroundColor: '#F3F4F6', borderRadius: '8px'},
-    centeredMessage: { padding: '3rem 1rem', textAlign: 'center', color: '#6B7280', fontSize: '1.1rem', fontWeight: '500' },
-    stepActions: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginTop: '1.5rem', borderTop: '1px solid #E5E7EB', paddingTop: '1.5rem' },
-    baseButton: { padding: '12px 20px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '1rem', transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    nextButton: { backgroundColor: '#F59E0B', color: '#FFFFFF', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' },
-    disabledButton: { backgroundColor: '#E5E7EB', color: '#9CA3AF', cursor: 'not-allowed' },
-    backButton: { backgroundColor: '#FFFFFF', color: '#374151', border: '1px solid #D1D5DB' },
-    downloadButton: { backgroundColor: '#10B981', color: 'white' },
-    addButtonSmall: { backgroundColor: '#F59E0B', color: '#FFFFFF', padding: '10px 16px', fontSize: '0.9rem', flexShrink: 0 },
-    deleteButton: { backgroundColor: '#FEE2E2', color: '#EF4444', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.2rem' },
-    totalSummary: { fontSize: '1rem', color: '#374151', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' },
-    modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17, 24, 39, 0.6)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' },
-    modalContent: { backgroundColor: 'white', padding: '2rem', borderRadius: '12px', width: '100%', maxWidth: '500px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' },
-    modalFooter: { display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' },
-    listSubHeader: { marginTop: 0, marginBottom: '1rem', color: '#111827', fontWeight: '600', fontSize: '1.25rem', borderBottom: '1px solid #E5E7EB', paddingBottom: '0.75rem' },
-    orderRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 0', borderBottom: '1px solid #F3F4F6' },
-    orderActions: { display: 'flex', alignItems: 'center', gap: '1rem' },
-    companyName: { fontSize: '1rem', fontWeight: '500', margin: 0, color: '#1F2937' },
-    areaName: { fontSize: '0.875rem', color: '#6B7280', margin: '2px 0 0 0' },
-    quantityText: { fontWeight: '500', fontSize: '1rem', minWidth: '80px', textAlign: 'center' },
-    reviewSection: { marginBottom: '1.5rem' },
-    reviewItem: { display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid #F3F4F6', fontSize: '1rem', color: '#374151' },
-    reviewTotal: { textAlign: 'right', marginTop: '0.75rem', fontSize: '1.1rem', color: '#111827' },
-    grandTotalSection: { marginTop: '2rem', paddingTop: '1.5rem', borderTop: '2px solid #111827', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '1.1rem', fontWeight: '600', color: '#111827' },
-};
