@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/router';
 
-// A simple, self-contained SVG icon for the 'Add Customer' button.
-function AddCustomerIcon() {
+// A simple, self-contained SVG icon for the 'Logout' button.
+function LogoutIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}>
-      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-      <circle cx="8.5" cy="7" r="4"></circle>
-      <line x1="20" y1="8" x2="20" y2="14"></line>
-      <line x1="17" y1="11" x2="23" y2="11"></line>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+      <polyline points="16 17 21 12 16 7"></polyline>
+      <line x1="21" y1="12" x2="9" y2="12"></line>
     </svg>
   );
 }
@@ -16,39 +16,47 @@ function AddCustomerIcon() {
 // We export the height so the parent page knows how much padding to add.
 export const HEADER_HEIGHT = '75px'; 
 
-export default function Header({ onAddCustomerClick }) {
-  const [isAddHovered, setIsAddHovered] = useState(false);
+export default function Header() {
+  const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+  const router = useRouter();
+
+  const handleLogout = () => {
+    // Clear any authentication tokens
+    localStorage.removeItem('authToken');
+    sessionStorage.removeItem('authToken');
+    
+    // Redirect to login page
+    router.push('/Alogin');
+  };
 
   // Dynamically apply hover styles
-  const addButtonStyle = { 
+  const logoutButtonStyle = { 
     ...styles.baseButton, 
-    ...styles.addCustomerButton, 
-    ...(isAddHovered ? styles.addCustomerButtonHover : {}) 
+    ...styles.logoutButton, 
+    ...(isLogoutHovered ? styles.logoutButtonHover : {}) 
   };
 
   return (
     <header style={styles.header}>
       <div style={styles.branding}>
-        {/* RESOLVED: Replaced <img> with next/image <Image> component */}
-        {/* Added width and height props, which are required for optimization */}
         <Image 
           src="/Logo.png" 
           alt="Agasthya Logo" 
-          width={60} // Example width, adjust to your logo's aspect ratio
+          width={60}
           height={50}
-          style={styles.logo} // Custom styles are passed via the style prop
+          style={styles.logo}
         />
       </div>
       
       <div style={styles.actionsContainer}>
         <button 
-          style={addButtonStyle} 
-          onClick={onAddCustomerClick} // This prop will trigger the action in the parent page
-          onMouseEnter={() => setIsAddHovered(true)}
-          onMouseLeave={() => setIsAddHovered(false)}
+          style={logoutButtonStyle} 
+          onClick={handleLogout}
+          onMouseEnter={() => setIsLogoutHovered(true)}
+          onMouseLeave={() => setIsLogoutHovered(false)}
         >
-          <AddCustomerIcon />
-          <span>Add customer</span>
+          <LogoutIcon />
+          <span>Logout</span>
         </button>
       </div>
     </header>
@@ -76,10 +84,7 @@ const styles = {
     alignItems: 'center' 
   },
   logo: { 
-    // width and height are now controlled by the Image component's props,
-    // but you can still apply other styles like object-fit if needed.
-    // The component will automatically set height to 50px from its props.
-    width: 'auto', // Allow the width to adjust based on the height
+    width: 'auto',
   },
   actionsContainer: { 
     display: 'flex', 
@@ -98,14 +103,14 @@ const styles = {
     lineHeight: '1.2', 
     transition: 'all 0.2s ease-in-out',
   },
-  addCustomerButton: { 
-    backgroundColor: '#FBBF24', 
-    color: '#1F2937', 
-    borderColor: '#FBBF24', 
+  logoutButton: { 
+    backgroundColor: '#EF4444', 
+    color: '#FFFFFF', 
+    borderColor: '#EF4444', 
   },
-  addCustomerButtonHover: { 
-    backgroundColor: '#F59E0B', 
-    borderColor: '#F59E0B', 
+  logoutButtonHover: { 
+    backgroundColor: '#DC2626', 
+    borderColor: '#DC2626', 
     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)', 
     transform: 'translateY(-1px)', 
   },
