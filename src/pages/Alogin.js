@@ -36,7 +36,6 @@ export default function Alogin() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Prefetch Dashboard route so navigation is fast
   useEffect(() => {
     if (router && router.prefetch) {
       router.prefetch("/Dashboard").catch(() => {});
@@ -53,7 +52,7 @@ export default function Alogin() {
       Swal.fire({
         icon: "warning",
         title: "Missing details",
-        text: "employee ID and password.",
+        text: "Please enter your employee ID and password.",
         confirmButtonColor: PRIMARY_HEX,
       });
       return;
@@ -74,7 +73,6 @@ export default function Alogin() {
       const u = json?.user || null;
       if (!u || !u.id) throw new Error("Login failed");
 
-      // Client-side storage
       if (typeof window !== "undefined") {
         const store = remember ? localStorage : sessionStorage;
         store.setItem("auth", "1");
@@ -88,7 +86,6 @@ export default function Alogin() {
         if (remember) localStorage.setItem("remember", "1");
         else localStorage.removeItem("remember");
 
-        // cleanup legacy keys
         localStorage.removeItem("hr_auth");
         localStorage.removeItem("hr_role");
         localStorage.removeItem("hr_name");
@@ -115,53 +112,49 @@ export default function Alogin() {
   return (
     <>
       <Head>
-        <title>Sign In • Agasthya  NutroMilk</title>
+        <title>Sign In • Agasthya NutroMilk</title>
         <meta name="robots" content="noindex" />
       </Head>
 
       <main className="min-h-screen bg-white flex flex-col relative overflow-hidden">
-        {/* Background image (cover). Put /public/bg-login.png or change the src */}
-        <div className="fixed inset-0 -z-10">
+        {/* Background image fixed behind UI.
+            objectFit: "cover" + objectPosition: "bottom center" =>
+            image fills viewport and is anchored to bottom (top may be cropped). */}
+        <div className="">
           <Image
-            src="/bg-login.png"
+            src="/login.png"
             alt="Background"
             priority
             fill
-            style={{ objectFit: "cover" }}
-            sizes="(max-width: 768px) 100vw, 100vw"
+            style={{ objectFit: "cover", objectPosition: "bottom center" }}
+            sizes="100vw"
+            onLoadingComplete={() => console.info("bg image loaded: /login.png")}
+            onError={(err) => console.warn("bg image failed to load: /login.png", err)}
           />
-          {/* subtle overlay to keep content readable */}
+
+          {/* Gradient overlay to keep text readable while showing the image bottom */}
           <div
             aria-hidden
             className="absolute inset-0"
-            style={{ background: "rgba(255,255,255,0.78)" }}
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.28) 60%, rgba(0,0,0,0.44) 100%)",
+            }}
           />
         </div>
 
-        {/* Center column - now positioned at bottom */}
+        {/* Layout: anchor the form near the bottom so it sits over the visible lower portion of the image */}
         <div className="flex-1 flex items-end justify-center">
           <div className="w-full max-w-md">
-            {/* Card positioned at bottom */}
-            <div className="bg-white/96 backdrop-blur-sm p-6">
-              {/* Top area: logo + heading */}
+            <div className="bg-white/96 backdrop-blur-sm p-6 shadow-sm">
               <div className="text-center mb-8">
-                <div className="flex items-center justify-center mb-4">
-                  <div className="relative h-20 w-20">
-                    <Image src="/logo.png" alt="Agasthya" fill className="object-contain" priority />
-                  </div>
-                </div>
-
                 <h1 className="text-2xl font-semibold text-gray-900">Agasthya NutroMilk</h1>
                 <p className="text-sm text-gray-500 mt-1">Enterprise Sales & Distribution</p>
               </div>
 
-              {/* Form positioned right above the button */}
               <form onSubmit={onSubmit} className="space-y-4">
-                {/* Email/ID Field */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-2">
-                   Employee ID
-                  </label>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">Employee ID</label>
                   <div className="relative">
                     <input
                       type="text"
@@ -182,14 +175,12 @@ export default function Alogin() {
                   </div>
                 </div>
 
-                {/* Password Field */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-medium text-gray-600">Password</label>
-                    <a href="/forgot-password" className={`text-xs ${LINK_TEXT}`}>
-                      Forgot?
-                    </a>
+                    <a href="/forgot-password" className={`text-xs ${LINK_TEXT}`}>Forgot?</a>
                   </div>
+
                   <div className="relative">
                     <input
                       type={showPwd ? "text" : "password"}
@@ -228,7 +219,6 @@ export default function Alogin() {
                   </div>
                 </div>
 
-                {/* Row: remember + version */}
                 <div className="flex items-center justify-between">
                   <label className="inline-flex items-center gap-2 text-sm text-gray-700 select-none">
                     <input
@@ -239,25 +229,24 @@ export default function Alogin() {
                     />
                     <span className="text-sm text-gray-700">Remember me</span>
                   </label>
-   <p className="text-xs text-gray-500 text-center mt-1">
-                  <a href="/Hlogin" className={LINK_TEXT}>Privacy Policy</a>.
-                </p>                </div>
 
-                {/* compact privacy line */}
-             
+                  <p className="text-xs text-gray-500 text-center mt-1">
+                    <a href="/Hlogin" className={LINK_TEXT}>Privacy Policy</a>.
+                  </p>
+                </div>
               </form>
             </div>
           </div>
         </div>
 
-        {/* Fixed Bottom Button Section - now closer to the form */}
+        {/* Sticky bottom login button */}
         <div className="sticky bottom-0 bg-white/90 border-t border-gray-100">
           <div className="max-w-md mx-auto">
             <button
               type="button"
               onClick={onSubmit}
               disabled={loading || success}
-              className={`w-full inline-flex items-center justify-center  ${BTN_SOLID} text-white font-medium py-5 text-lg ${loading || success ? "opacity-60 cursor-not-allowed" : ""}`}
+              className={`w-full inline-flex items-center justify-center ${BTN_SOLID} text-white font-medium py-5 text-lg ${loading || success ? "opacity-60 cursor-not-allowed" : ""}`}
             >
               {loading ? (
                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

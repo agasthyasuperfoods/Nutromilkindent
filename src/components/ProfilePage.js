@@ -34,7 +34,7 @@ const styles = {
 
   // --- PROFILE HEADER (Updated Colors) ---
   profileHeader: {
-    background: "#334155", // Changed: Softer, dark slate blue
+    background: "#ffb900", // Changed: Softer, dark slate blue
     borderRadius: 20, // Slightly more rounded
     padding: "24px",
     display: "flex",
@@ -62,7 +62,7 @@ const styles = {
   },
   subText: {
     fontSize: 14,
-    color: "#E2E8F0", // Changed: Softer light grey for subtext
+    color: "#ffffff", // Changed: Softer light grey for subtext
     opacity: 0.9,
   },
 
@@ -114,8 +114,8 @@ export default function ProfilePage() {
   useEffect(() => {
     // This logic to fetch user data remains the same
     const defaultUser = {
-      name: "John Doe",
-      email: "john.doe@example.com",
+      name: "Bittu",
+      email: "bittu@nutromilk.com",
       phone: "+91 90000 00000",
       role: "Sales Executive",
       avatarInitials: "JD",
@@ -190,11 +190,12 @@ export default function ProfilePage() {
                 <Icon path="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
                 <div style={styles.listItemContent}>Manage Bulk Customers</div>
                 <div style={styles.itemChevron}>›</div>
+              </div>          <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToBulkCustomers}>
+                <Icon path="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                <div style={styles.listItemContent}>Monthly Bulk Indents</div>
+                <div style={styles.itemChevron}>›</div>
               </div>
-              <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={handleLogout}>
-                <Icon path="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" color="#EF4444" />
-                <div style={{ ...styles.listItemContent, ...styles.logoutText }}>Log out</div>
-              </div>
+         
             </div>
 
             <div style={{ height: 48 }} />

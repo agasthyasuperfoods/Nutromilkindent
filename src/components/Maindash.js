@@ -51,7 +51,7 @@ function Maindash() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 pt-16 md:pt-19 mb-6 md:mb-8">
         
         {/* Date Picker Section */}
-        <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm ">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-800">Select Date for Indent</h3>
             <button 
@@ -206,10 +206,10 @@ function Maindash() {
 
       {/* Bottom Modal for Mobile */}
       {showIndentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
+        <div className="fixed inset-0 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
           <div className="bg-white rounded-t-2xl md:rounded-lg w-full md:max-w-4xl h-[90vh] md:max-h-[90vh] overflow-hidden flex flex-col md:shadow-lg">
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-4 md:p-6 border-b border-gray-200 bg-white">
+            <div className="flex justify-between items-center p-4 md:p-6  bg-white">
               <h2 className="text-xl font-semibold text-gray-800">
                 Create Indent - {formatDisplayDate(selectedDate)}
               </h2>
