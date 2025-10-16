@@ -17,7 +17,7 @@ import Image from "next/image";
  *  - Bulk customers fetched from /api/bulk-customers?date=YYYY-MM-DD
  *  - Default delivery quantity falls back to 33 L
  *  - Delivery item image: /milkpacket.png
- *  - Bulk item image: /bulkcans.png
+ *  - Bulk item image: /milkcans.png
  */
 
 function PlaceholderLogo({ className = "w-6 h-6 text-gray-400" }) {
@@ -364,24 +364,44 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
 
       {/* footer / actions */}
       <footer className="p-3 border-t bg-white">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex gap-3">
+          {/* Left button — always half width */}
+          <div className="flex-1">
             {step > 1 ? (
-              <button onClick={prev} className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
+              <button
+                type="button"
+                onClick={prev}
+                className="w-full h-12 flex items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg"
+              >
                 Previous
               </button>
             ) : (
-              <div />
+              <button
+                type="button"
+                onClick={() => onClose()}
+                className="w-full h-12 flex items-center justify-center rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg"
+              >
+                Cancel
+              </button>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Right button — always half width */}
+          <div className="flex-1">
             {step < 3 ? (
-              <button onClick={next} className="px-4 py-2 rounded bg-amber-500 text-white hover:bg-amber-600">
+              <button
+                type="button"
+                onClick={next}
+                className="w-full h-12 flex items-center justify-center rounded-md bg-amber-500 text-white hover:bg-amber-600 text-lg"
+              >
                 Next
               </button>
             ) : (
-              <button onClick={submit} className="px-4 py-2 rounded bg-amber-600 text-white hover:bg-green-700">
+              <button
+                type="button"
+                onClick={submit}
+                className="w-full h-12 flex items-center justify-center rounded-md bg-amber-600 text-white hover:bg-amber-700 text-lg"
+              >
                 Submit Indent
               </button>
             )}
