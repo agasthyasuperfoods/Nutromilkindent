@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// src/components/Maindash.js
+import React, { useEffect, useMemo, useState } from 'react';
 import Indent from './Indent';
 
 function Maindash() {
@@ -12,20 +13,99 @@ function Maindash() {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const [selectedDate, setSelectedDate] = useState(tomorrow);
 
-  // Mock data - replace with actual API data later
-  const deliveryBoysData = [
-    { id: 1, name: 'Raj Kumar', area: 'Area A', milkQuantity: '50L' },
-    { id: 2, name: 'Suresh Patel', area: 'Area B', milkQuantity: '35L' },
-    { id: 3, name: 'Amit Sharma', area: 'Area C', milkQuantity: '42L' },
-    { id: 4, name: 'Vikram Singh', area: 'Area A', milkQuantity: '28L' },
-  ];
+  // Delivery & bulk state
+  const [deliveryBoysData, setDeliveryBoysData] = useState([]);
+  const [bulkCustomersData, setBulkCustomersData] = useState([]);
 
-  const bulkCustomersData = [
-    { id: 1, name: 'Hotel Grand', area: 'Commercial', totalMilk: '120L' },
-    { id: 2, name: 'Restaurant Spice', area: 'Commercial', totalMilk: '85L' },
-    { id: 3, name: 'Cafe Coffee', area: 'Commercial', totalMilk: '65L' },
-    { id: 4, name: 'School Canteen', area: 'Institutional', totalMilk: '95L' },
-  ];
+  // load delivery boys from API
+  useEffect(() => {
+    let mounted = true;
+    (async function loadDeliveryBoys() {
+      try {
+        const res = await fetch('/api/delivery-boys');
+        if (!res.ok) throw new Error('delivery-boys fetch failed');
+        const json = await res.json();
+        const rows = json?.rows ?? [];
+        if (Array.isArray(rows) && mounted) {
+          const mapped = rows.map((r) => ({
+            id: r.employee_id ?? r.id ?? `d-${Math.random()}`,
+            name: r.delivery_boy_name ?? r.name ?? 'Unnamed',
+            // keep original DB column value (delivery_area) in area
+            area: r.delivery_area ?? r.area ?? '',
+            milkQuantity: (r.default_quantity ? String(r.default_quantity) : '33') + 'L',
+            mobile: r.mobile_number ?? r.mobile ?? '',
+            customArea: '', // for compatibility
+          }));
+          setDeliveryBoysData(mapped);
+          return;
+        }
+      } catch (err) {
+        console.error('loadDeliveryBoys error:', err);
+      }
+      // fallback: seed some defaults if API fails
+      if (mounted && deliveryBoysData.length === 0) {
+        setDeliveryBoysData([
+          { id: 1, name: 'Raj Kumar', area: 'Area A', milkQuantity: '50L', customArea: '' },
+          { id: 2, name: 'Suresh Patel', area: 'Area B', milkQuantity: '35L', customArea: '' },
+          { id: 3, name: 'Amit Sharma', area: 'Area C', milkQuantity: '42L', customArea: '' },
+          { id: 4, name: 'Vikram Singh', area: 'Area A', milkQuantity: '28L', customArea: '' },
+        ]);
+      }
+    })();
+
+    return () => (mounted = false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // load bulk customers for selected date
+  useEffect(() => {
+    let mounted = true;
+    (async function loadBulkCustomers() {
+      try {
+        const qDate = selectedDate ? new Date(selectedDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0,10);
+        const res = await fetch(`/api/bulk-customers?date=${encodeURIComponent(qDate)}`);
+        if (!res.ok) throw new Error('bulk-customers fetch failed');
+        const json = await res.json();
+        const rows = json?.rows ?? [];
+        if (Array.isArray(rows) && mounted) {
+          const mapped = rows.map((r) => ({
+            id: r.company_id ?? r.id ?? `b-${Math.random()}`,
+            name: r.company_name ?? r.name ?? 'Unnamed',
+            area: r.area ?? '',
+            totalMilk: (typeof r.quantity === 'number' ? r.quantity : Number(r.quantity || 0)) + 'L',
+            mobile: r.mobile_number ?? r.mobile ?? '',
+          }));
+          setBulkCustomersData(mapped);
+          return;
+        }
+      } catch (err) {
+        console.error('loadBulkCustomers error:', err);
+      }
+      // fallback: minimal seed
+      if (mounted && bulkCustomersData.length === 0) {
+        setBulkCustomersData([
+          { id: 1, name: 'Hotel Grand', area: 'Commercial', totalMilk: '120L' },
+          { id: 2, name: 'Restaurant Spice', area: 'Commercial', totalMilk: '85L' },
+          { id: 3, name: 'Cafe Coffee', area: 'Commercial', totalMilk: '65L' },
+        ]);
+      }
+    })();
+
+    return () => (mounted = false);
+  }, [selectedDate]);
+
+  // derive unique delivery_area values from deliveryBoysData (not used in read-only mode but kept for compatibility)
+  const deliveryAreaOptions = useMemo(() => {
+    const set = new Set();
+    deliveryBoysData.forEach((d) => {
+      if (d.area && d.area !== 'OTHER') set.add(d.area.trim());
+      if (d.customArea) set.add(d.customArea.trim());
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [deliveryBoysData]);
+
+  // compute bulk customers count for header badge
+  const bulkCustomersCount = useMemo(() => bulkCustomersData.length, [bulkCustomersData]);
 
   // Format date for display
   const formatDisplayDate = (date) => {
@@ -45,8 +125,13 @@ function Maindash() {
     setShowIndentModal(false);
   };
 
+  // update handlers left in place but not used in read-only mode
+  const updateDeliveryArea = () => {};
+  const updateDeliveryCustomArea = () => {};
+  const updateDeliveryQty = () => {};
+
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto font-sans w-full">
+   <div className="flex-1 overflow-auto p-4 md:p-6 max-w-6xl mx-auto font-sans w-full pb-24">
       {/* First Row - Date Picker and Action Buttons */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 pt-16 md:pt-19 mb-6 md:mb-8">
         
@@ -136,22 +221,23 @@ function Maindash() {
 
           {deliveryBoysExpanded && (
             <div>
-              {/* Header Row */}
-              <div className="grid grid-cols-3 gap-2 md:gap-4 p-3 md:p-4 bg-gray-50 font-semibold text-gray-700 border-b border-gray-200 text-xs md:text-sm">
+              {/* Header Row - only name + area */}
+              <div className="grid grid-cols-2 gap-2 md:gap-4 p-3 md:p-4 bg-gray-50 font-semibold text-gray-700 border-b border-gray-200 text-xs md:text-sm">
                 <span className="text-gray-600">Name</span>
-                <span className="text-gray-600">Area</span>
-                <span className="text-gray-600">Milk Quantity</span>
+                <span className="text-gray-600 text-right">Area</span>
               </div>
               
-              {/* Data Rows */}
+              {/* Data Rows - only name + area (read-only, area aligned right) */}
               {deliveryBoysData.map((boy) => (
                 <div 
                   key={boy.id} 
-                  className="grid grid-cols-3 gap-2 md:gap-4 p-3 md:p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150 last:border-b-0 text-sm md:text-base"
+                  className="grid grid-cols-2 gap-2 md:gap-4 p-3 md:p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150 last:border-b-0 text-sm md:text-base items-center"
                 >
                   <span className="font-medium text-gray-900 truncate">{boy.name}</span>
-                  <span className="text-gray-700 truncate">{boy.area}</span>
-                  <span className="text-green-700 font-semibold">{boy.milkQuantity}</span>
+
+                  <div className="text-right text-gray-700 truncate">
+                    {boy.customArea ? boy.customArea : boy.area || '—'}
+                  </div>
                 </div>
               ))}
             </div>
@@ -167,9 +253,7 @@ function Maindash() {
             <div className="flex items-center gap-4">
               <span className="text-lg font-semibold text-gray-800">Bulk Customers</span>
               <span className="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm font-medium border border-amber-200">
-                {bulkCustomersData.reduce((total, customer) => 
-                  total + parseInt(customer.totalMilk), 0
-                )}L Total
+                {bulkCustomersCount} Customers
               </span>
             </div>
             <span className={`transform transition-transform duration-200 text-gray-600 ${bulkCustomersExpanded ? 'rotate-180' : ''}`}>
@@ -181,22 +265,20 @@ function Maindash() {
 
           {bulkCustomersExpanded && (
             <div>
-              {/* Header Row */}
-              <div className="grid grid-cols-3 gap-2 md:gap-4 p-3 md:p-4 bg-gray-50 font-semibold text-gray-700 border-b border-gray-200 text-xs md:text-sm">
+              {/* Header Row - only name + area */}
+              <div className="grid grid-cols-2 gap-2 md:gap-4 p-3 md:p-4 bg-gray-50 font-semibold text-gray-700 border-b border-gray-200 text-xs md:text-sm">
                 <span className="text-gray-600">Customer Name</span>
-                <span className="text-gray-600">Type</span>
-                <span className="text-gray-600">Total Milk</span>
+                <span className="text-gray-600 text-right">Area</span>
               </div>
               
-              {/* Data Rows */}
+              {/* Data Rows - only name + area (read-only, area aligned right) */}
               {bulkCustomersData.map((customer) => (
                 <div 
                   key={customer.id} 
-                  className="grid grid-cols-3 gap-2 md:gap-4 p-3 md:p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150 last:border-b-0 text-sm md:text-base"
+                  className="grid grid-cols-2 gap-2 md:gap-4 p-3 md:p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150 last:border-b-0 text-sm md:text-base"
                 >
                   <span className="font-medium text-gray-900 truncate">{customer.name}</span>
-                  <span className="text-gray-700 truncate">{customer.area}</span>
-                  <span className="text-green-700 font-semibold">{customer.totalMilk}</span>
+                  <span className="text-gray-700 truncate text-right">{customer.area || '—'}</span>
                 </div>
               ))}
             </div>

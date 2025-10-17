@@ -11,14 +11,20 @@ import { PlusSquare, Trash2 } from "lucide-react";
 
 const styles = {
   pageWrap: { width: "100%" },
+
+  // IMPORTANT: add top/bottom padding so fixed Header/Footer don't overlap content.
+  // Adjust values to match your Header/Footer heights (here: 80px top, 80px bottom).
   contentArea: {
     position: "relative",
     padding: 16,
+    paddingTop: 80, // space for fixed header
+    paddingBottom: 96, // space for fixed footer / allow bottom-sheet comfortable space
     boxSizing: "border-box",
     WebkitOverflowScrolling: "touch",
     display: "flex",
     justifyContent: "center",
   },
+
   container: { width: "100%", maxWidth: 720 },
   card: {
     background: "#ffffff",

@@ -3,12 +3,21 @@ import React, { useEffect, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 
-// Helper for inline SVG icons
-const Icon = ({ path, color = "#6B7280" }) => (
-  <svg width={22} height={22} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-    <path d={path} stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
+// Professional icons from react-icons (Heroicons-style set)
+import {
+  HiOutlineUser,
+  HiOutlineMail,
+  HiOutlinePhone,
+  HiOutlineCog,
+  HiOutlineLockClosed,
+  HiOutlineOfficeBuilding,
+  HiOutlineTruck,
+  HiOutlineMap,
+  HiOutlineCalendar,
+} from "react-icons/hi";
+
+const ICON_COLOR = "#6B7280";
+const ICON_SIZE = 20;
 
 const styles = {
   // --- LAYOUT ---
@@ -34,8 +43,8 @@ const styles = {
 
   // --- PROFILE HEADER (Updated Colors) ---
   profileHeader: {
-    background: "#ffb900", // Changed: Softer, dark slate blue
-    borderRadius: 20, // Slightly more rounded
+    background: "#ffb900",
+    borderRadius: 20,
     padding: "24px",
     display: "flex",
     alignItems: "center",
@@ -47,14 +56,14 @@ const styles = {
     width: 64,
     height: 64,
     borderRadius: 999,
-    background: "#475569", // Changed: Coordinated darker grey
+    background: "#475569",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontWeight: 600,
     fontSize: 22,
     flexShrink: 0,
-    border: "2px solid #64748B", // Changed: Subtle lighter border
+    border: "2px solid #64748B",
   },
   name: {
     fontSize: 20,
@@ -62,13 +71,18 @@ const styles = {
   },
   subText: {
     fontSize: 14,
-    color: "#ffffff", // Changed: Softer light grey for subtext
+    color: "#ffffff",
     opacity: 0.9,
   },
 
   // --- SECTIONS & LISTS ---
-  sectionTitle: {
+  sectionTitleRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
     padding: "0 8px 8px",
+  },
+  sectionTitle: {
     fontSize: 13,
     fontWeight: 600,
     color: "#6B7280",
@@ -80,11 +94,12 @@ const styles = {
     borderRadius: 16,
     marginBottom: 24,
     overflow: "hidden",
+    boxShadow: "0 1px 2px rgba(16,24,40,0.03)",
   },
   listItem: {
     display: "flex",
     alignItems: "center",
-    padding: "16px",
+    padding: "14px 16px",
     gap: 16,
     borderTop: "1px solid #F3F4F6",
   },
@@ -102,8 +117,14 @@ const styles = {
     fontSize: 20,
   },
   logoutText: {
-    color: "#EF4444", // Red for logout
+    color: "#EF4444",
     fontWeight: 600,
+  },
+  smallIconWrapper: {
+    width: 28,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 };
 
@@ -129,7 +150,7 @@ export default function ProfilePage() {
     }
   }, []);
 
-  // Handlers
+  // Navigation handlers
   const handleLogout = () => {
     if (window.confirm("Are you sure you want to log out?")) {
       localStorage.clear();
@@ -138,6 +159,8 @@ export default function ProfilePage() {
   };
   const handleChangePassword = () => router.push("/profile/change-password");
   const goToBulkCustomers = () => router.push("/bulk-customers");
+  const goToDeliveryPartners = () => router.push("/delivery-partners");
+  const goToRoutes = () => router.push("/routes");
 
   if (!user) {
     return <div style={styles.page}></div>; // Render empty page or a loader
@@ -162,42 +185,83 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* --- Account Information Section --- */}
-            <div style={styles.sectionTitle}>Account Information</div>
+            {/* --- Account Information Section (with account icon) --- */}
+            <div style={styles.sectionTitleRow}>
+              <div style={styles.smallIconWrapper}>
+                <HiOutlineUser size={ICON_SIZE} color={ICON_COLOR} />
+              </div>
+              <div style={styles.sectionTitle}>Account Information</div>
+            </div>
+
             <div style={styles.listCard}>
               <div style={{ ...styles.listItem, borderTop: "none" }}>
-                <Icon path="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2zM22 6l-10 7L2 6" />
+                <div style={styles.smallIconWrapper}>
+                  <HiOutlineMail size={ICON_SIZE} color={ICON_COLOR} />
+                </div>
                 <div style={styles.listItemContent}>{user.email}</div>
               </div>
               <div style={styles.listItem}>
-                <Icon path="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                <div style={styles.smallIconWrapper}>
+                  <HiOutlinePhone size={ICON_SIZE} color={ICON_COLOR} />
+                </div>
                 <div style={styles.listItemContent}>{user.phone}</div>
               </div>
             </div>
 
             {/* --- Settings Section --- */}
-            <div style={styles.sectionTitle}>Settings</div>
+            <div style={styles.sectionTitleRow}>
+              <div style={styles.smallIconWrapper}>
+                <HiOutlineCog size={ICON_SIZE} color={ICON_COLOR} />
+              </div>
+              <div style={styles.sectionTitle}>Settings</div>
+            </div>
+
             <div style={styles.listCard}>
               <div
                 style={{ ...styles.listItem, ...styles.listItemClickable, borderTop: "none" }}
                 onClick={handleChangePassword}
               >
-                <Icon path="M21 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z" />
+                <div style={styles.smallIconWrapper}>
+                  <HiOutlineLockClosed size={ICON_SIZE} color={ICON_COLOR} />
+                </div>
                 <div style={styles.listItemContent}>Change Password</div>
                 <div style={styles.itemChevron}>›</div>
               </div>
+
               <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToBulkCustomers}>
-                <Icon path="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                <div style={styles.smallIconWrapper}>
+                  <HiOutlineOfficeBuilding size={ICON_SIZE} color={ICON_COLOR} />
+                </div>
                 <div style={styles.listItemContent}>Manage Bulk Customers</div>
                 <div style={styles.itemChevron}>›</div>
-              </div>          <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToBulkCustomers}>
-                <Icon path="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M17 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </div>
+
+              <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToDeliveryPartners}>
+                <div style={styles.smallIconWrapper}>
+                  <HiOutlineTruck size={ICON_SIZE} color={ICON_COLOR} />
+                </div>
+                <div style={styles.listItemContent}>Manage Delivery Partners</div>
+                <div style={styles.itemChevron}>›</div>
+              </div>
+
+              <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToRoutes}>
+                <div style={styles.smallIconWrapper}>
+                  <HiOutlineMap size={ICON_SIZE} color={ICON_COLOR} />
+                </div>
+                <div style={styles.listItemContent}>Routes</div>
+                <div style={styles.itemChevron}>›</div>
+              </div>
+
+              <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToBulkCustomers}>
+                <div style={styles.smallIconWrapper}>
+                  <HiOutlineCalendar size={ICON_SIZE} color={ICON_COLOR} />
+                </div>
                 <div style={styles.listItemContent}>Monthly Bulk Indents</div>
                 <div style={styles.itemChevron}>›</div>
               </div>
-         
             </div>
 
+            {/* Spacer to keep content above footer */}
             <div style={{ height: 48 }} />
           </div>
         </div>
