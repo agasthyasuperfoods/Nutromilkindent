@@ -16,9 +16,8 @@ const styles = {
 
   contentArea: {
     position: "relative",
-    padding: 16,
-    paddingTop: 80, // space for fixed header
-    paddingBottom: 96, // space for fixed footer / allow bottom-sheet comfortable space
+    // keep top/bottom spacing for fixed header/footer, remove left/right padding
+    padding: "74px 0 96px",
     boxSizing: "border-box",
     WebkitOverflowScrolling: "touch",
     display: "flex",
@@ -28,11 +27,8 @@ const styles = {
   container: { width: "100%", maxWidth: 720 },
   card: {
     background: "#ffffff",
-    borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    border: "1px solid #E6E7EA",
-    boxShadow: "0 4px 14px rgba(16,24,40,0.03)",
   },
   muted: { color: "#6B7280", fontSize: 13 },
   customersList: { marginTop: 8, display: "grid", gap: 8 },
