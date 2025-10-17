@@ -1,19 +1,19 @@
 // src/components/Bulkcustomers.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { PlusSquare, Trash2 } from "lucide-react";
 
 /**
- * Bulkcustomers component (mobile-first)
- * - List + add bottom-sheet
- * - When tapping a customer row, opens edit bottom-sheet with DB fields + monthly fields
- * - Save tries server PUT /api/bulk-customers/:id and POST /api/monthly-bulk-indents (upsert), falls back to local update
+ * Bulkcustomers component
+ * - indent_type & payment_term are available only in Add/Edit modals (not shown in main list)
+ * - Main list shows name / phone / area only
+ * - Add/Edit modals contain: indent_type, payment_term, default_quantity_weekdays, Saturday, Sunday, Holidays
+ * - Padding added to content area so fixed Header/Footer do not overlap list rows
+ * - Modals constrained with maxHeight + internal scrolling
  */
 
 const styles = {
   pageWrap: { width: "100%" },
 
-  // IMPORTANT: add top/bottom padding so fixed Header/Footer don't overlap content.
-  // Adjust values to match your Header/Footer heights (here: 80px top, 80px bottom).
   contentArea: {
     position: "relative",
     padding: 16,
@@ -37,7 +37,7 @@ const styles = {
   muted: { color: "#6B7280", fontSize: 13 },
   customersList: { marginTop: 8, display: "grid", gap: 8 },
   customerItem: {
-    padding: 10,
+    padding: 12,
     borderRadius: 10,
     background: "#F8FAFC",
     display: "flex",
@@ -96,6 +96,7 @@ const styles = {
     justifyContent: "center",
     zIndex: 3000,
   },
+  // Constrain modal height and allow internal scroll so it never pushes content under footer.
   modalSheet: {
     width: "100%",
     maxWidth: 720,
@@ -106,12 +107,29 @@ const styles = {
     boxSizing: "border-box",
     boxShadow: "0 -8px 30px rgba(2,6,23,0.15)",
     transformOrigin: "bottom center",
+    maxHeight: "80vh",
+    overflowY: "auto",
   },
+
   emptyNote: { color: "#6B7280", fontSize: 15 },
   fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
   label: { fontSize: 13, color: "#374151", marginBottom: 6, fontWeight: 700 },
   smallMuted: { fontSize: 13, color: "#6B7280" },
+  badge: {
+    display: "inline-block",
+    padding: "4px 8px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    background: "#F1F5F9",
+    color: "#334155",
+    marginLeft: 8,
+  },
 };
+
+// fallback defaults if DB has no values yet
+const FALLBACK_INDENT_TYPES = ["Regular", "One-time", "Trial"];
+const FALLBACK_PAYMENT_TERMS = ["Prepaid", "COD", "Net 7", "Net 15"];
 
 export default function Bulkcustomers() {
   const [bulkCustomers, setBulkCustomers] = useState([]);
@@ -119,13 +137,45 @@ export default function Bulkcustomers() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [newCustomer, setNewCustomer] = useState({ name: "", phone: "", area: "" });
+  const [newCustomer, setNewCustomer] = useState({
+    name: "",
+    phone: "",
+    area: "",
+    indent_type: "",
+    payment_term: "",
+    default_quantity_weekdays: "",
+    Saturday: "",
+    Sunday: "",
+    Holidays: "",
+  });
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // derive option lists from fetched customers (unique + sorted)
+  const indentTypes = useMemo(() => {
+    const set = new Set();
+    bulkCustomers.forEach((c) => {
+      if (c.indent_type && String(c.indent_type).trim()) set.add(String(c.indent_type).trim());
+    });
+    const arr = Array.from(set);
+    if (arr.length === 0) return FALLBACK_INDENT_TYPES;
+    return arr.sort((a, b) => a.localeCompare(b));
+  }, [bulkCustomers]);
+
+  const paymentTerms = useMemo(() => {
+    const set = new Set();
+    bulkCustomers.forEach((c) => {
+      if (c.payment_term && String(c.payment_term).trim()) set.add(String(c.payment_term).trim());
+    });
+    const arr = Array.from(set);
+    if (arr.length === 0) return FALLBACK_PAYMENT_TERMS;
+    return arr.sort((a, b) => a.localeCompare(b));
+  }, [bulkCustomers]);
+
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
+
+    (async function loadCustomers() {
       setLoading(true);
       try {
         const res = await fetch("/api/bulk-customers");
@@ -138,12 +188,12 @@ export default function Bulkcustomers() {
               company_name: r.company_name ?? r.name ?? "Unnamed",
               mobile_number: r.mobile_number ?? r.phone ?? "",
               area: r.area ?? "",
-              default_quantity_weekdays: r.default_quantity_weekdays ?? null,
               indent_type: r.indent_type ?? "",
               payment_term: r.payment_term ?? "",
-              Saturday: r.Saturday ?? null,
-              Sunday: r.Sunday ?? null,
-              Holidays: r.Holidays ?? null,
+              default_quantity_weekdays: r.default_quantity_weekdays ?? "",
+              Saturday: r.Saturday ?? "",
+              Sunday: r.Sunday ?? "",
+              Holidays: r.Holidays ?? "",
               raw: r,
             }));
             setBulkCustomers(mapped);
@@ -153,9 +203,8 @@ export default function Bulkcustomers() {
           }
         }
       } catch (err) {
-        // ignore network error -> fallback below
+        // fallback
       }
-
       try {
         const raw = localStorage.getItem("bulkCustomers");
         if (raw && mounted) setBulkCustomers(JSON.parse(raw));
@@ -165,9 +214,8 @@ export default function Bulkcustomers() {
       } finally {
         if (mounted) setLoading(false);
       }
-    };
+    })();
 
-    load();
     return () => { mounted = false; };
   }, []);
 
@@ -175,14 +223,18 @@ export default function Bulkcustomers() {
     try { localStorage.setItem("bulkCustomers", JSON.stringify(next)); } catch (_) {}
   };
 
-  // Helper: month-first-day string (YYYY-MM-01)
-  const monthFirstFor = (d = new Date()) => {
-    const first = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-    return first.toISOString().slice(0, 10); // 'YYYY-MM-DD' with day = 01
-  };
-
   const openAdd = () => {
-    setNewCustomer({ name: "", phone: "", area: "" });
+    setNewCustomer({
+      name: "",
+      phone: "",
+      area: "",
+      indent_type: indentTypes[0] || FALLBACK_INDENT_TYPES[0],
+      payment_term: paymentTerms[0] || FALLBACK_PAYMENT_TERMS[0],
+      default_quantity_weekdays: "",
+      Saturday: "",
+      Sunday: "",
+      Holidays: "",
+    });
     setShowAddModal(true);
   };
 
@@ -193,17 +245,19 @@ export default function Bulkcustomers() {
       return;
     }
     setAdding(true);
+
     const optimistic = {
       id: `local-${Date.now()}`,
       company_name: newCustomer.name.trim(),
       mobile_number: newCustomer.phone?.trim() || "",
       area: newCustomer.area?.trim() || "",
-      default_quantity_weekdays: null,
-      indent_type: "",
-      payment_term: "",
-      Saturday: null,
-      Sunday: null,
-      Holidays: null,
+      indent_type: newCustomer.indent_type || "",
+      payment_term: newCustomer.payment_term || "",
+      default_quantity_weekdays:
+        newCustomer.default_quantity_weekdays === "" ? null : Number(newCustomer.default_quantity_weekdays),
+      Saturday: newCustomer.Saturday === "" ? null : Number(newCustomer.Saturday),
+      Sunday: newCustomer.Sunday === "" ? null : Number(newCustomer.Sunday),
+      Holidays: newCustomer.Holidays === "" ? null : Number(newCustomer.Holidays),
     };
 
     try {
@@ -214,6 +268,12 @@ export default function Bulkcustomers() {
           company_name: optimistic.company_name,
           mobile_number: optimistic.mobile_number,
           area: optimistic.area,
+          indent_type: optimistic.indent_type,
+          payment_term: optimistic.payment_term,
+          default_quantity_weekdays: optimistic.default_quantity_weekdays,
+          Saturday: optimistic.Saturday,
+          Sunday: optimistic.Sunday,
+          Holidays: optimistic.Holidays,
         }),
       });
 
@@ -225,12 +285,12 @@ export default function Bulkcustomers() {
           company_name: createdRow.company_name ?? optimistic.company_name,
           mobile_number: createdRow.mobile_number ?? optimistic.mobile_number,
           area: createdRow.area ?? optimistic.area,
-          default_quantity_weekdays: createdRow.default_quantity_weekdays ?? null,
-          indent_type: createdRow.indent_type ?? "",
-          payment_term: createdRow.payment_term ?? "",
-          Saturday: createdRow.Saturday ?? null,
-          Sunday: createdRow.Sunday ?? null,
-          Holidays: createdRow.Holidays ?? null,
+          indent_type: createdRow.indent_type ?? optimistic.indent_type,
+          payment_term: createdRow.payment_term ?? optimistic.payment_term,
+          default_quantity_weekdays: createdRow.default_quantity_weekdays ?? optimistic.default_quantity_weekdays,
+          Saturday: createdRow.Saturday ?? optimistic.Saturday,
+          Sunday: createdRow.Sunday ?? optimistic.Sunday,
+          Holidays: createdRow.Holidays ?? optimistic.Holidays,
         };
         const next = [mapped, ...bulkCustomers];
         setBulkCustomers(next);
@@ -249,9 +309,9 @@ export default function Bulkcustomers() {
         company_name: optimistic.company_name,
         mobile_number: optimistic.mobile_number,
         area: optimistic.area,
-        default_quantity_weekdays: optimistic.default_quantity_weekdays,
         indent_type: optimistic.indent_type,
         payment_term: optimistic.payment_term,
+        default_quantity_weekdays: optimistic.default_quantity_weekdays,
         Saturday: optimistic.Saturday,
         Sunday: optimistic.Sunday,
         Holidays: optimistic.Holidays,
@@ -266,62 +326,30 @@ export default function Bulkcustomers() {
 
   const deleteCustomer = async (id) => {
     if (!confirm("Delete this bulk customer?")) return;
-    try {
-      await fetch(`/api/bulk-customers/${id}`, { method: "DELETE" });
-    } catch (_) {}
+    try { await fetch(`/api/bulk-customers/${id}`, { method: "DELETE" }); } catch (_) {}
     const next = bulkCustomers.filter((c) => String(c.id) !== String(id));
     setBulkCustomers(next);
     persist(next);
   };
 
-  // When a customer row is clicked: open edit bottom-sheet and load monthly row
-  const openEdit = async (c) => {
+  const openEdit = (c) => {
     const base = {
       id: c.id,
       company_name: c.company_name ?? c.name ?? "",
       mobile_number: c.mobile_number ?? c.phone ?? "",
       area: c.area ?? "",
+      indent_type: c.indent_type ?? indentTypes[0] ?? FALLBACK_INDENT_TYPES[0],
+      payment_term: c.payment_term ?? paymentTerms[0] ?? FALLBACK_PAYMENT_TERMS[0],
       default_quantity_weekdays: c.default_quantity_weekdays ?? "",
-      indent_type: c.indent_type ?? "",
-      payment_term: c.payment_term ?? "",
       Saturday: c.Saturday ?? "",
       Sunday: c.Sunday ?? "",
       Holidays: c.Holidays ?? "",
-      monthYear: monthFirstFor(),
-      quantity_weekdays: "",
-      quantity_saturday: "",
-      quantity_sunday: "",
-      quantity_holidays: "",
     };
 
     setSelectedCustomer(base);
     setShowEditModal(true);
-
-    // fetch monthly row for this company & month (best-effort)
-    try {
-      const monthParam = base.monthYear;
-      const q = `/api/monthly-bulk-indents?company_id=${encodeURIComponent(c.id)}&month=${encodeURIComponent(monthParam)}`;
-      const res = await fetch(q);
-      if (res.ok) {
-        const data = await res.json();
-        const row = data?.row ?? (Array.isArray(data?.rows) ? data.rows[0] : data) ?? null;
-        if (row) {
-          setSelectedCustomer((s) => ({
-            ...s,
-            monthYear: row.month_year ? row.month_year.slice(0, 10) : monthParam,
-            quantity_weekdays: row.quantity_weekdays ?? "",
-            quantity_saturday: row.quantity_saturday ?? "",
-            quantity_sunday: row.quantity_sunday ?? "",
-            quantity_holidays: row.quantity_holidays ?? "",
-          }));
-        }
-      }
-    } catch (err) {
-      // ignore — monthly stays blank
-    }
   };
 
-  // Save edits: update bulk customer (PUT) AND upsert monthly row
   const saveEdits = async (e) => {
     e?.preventDefault();
     if (!selectedCustomer) return;
@@ -331,16 +359,15 @@ export default function Bulkcustomers() {
       company_name: selectedCustomer.company_name,
       mobile_number: selectedCustomer.mobile_number,
       area: selectedCustomer.area,
-      default_quantity_weekdays:
-        selectedCustomer.default_quantity_weekdays === "" ? null : Number(selectedCustomer.default_quantity_weekdays),
       indent_type: selectedCustomer.indent_type,
       payment_term: selectedCustomer.payment_term,
+      default_quantity_weekdays:
+        selectedCustomer.default_quantity_weekdays === "" ? null : Number(selectedCustomer.default_quantity_weekdays),
       Saturday: selectedCustomer.Saturday === "" ? null : Number(selectedCustomer.Saturday),
       Sunday: selectedCustomer.Sunday === "" ? null : Number(selectedCustomer.Sunday),
       Holidays: selectedCustomer.Holidays === "" ? null : Number(selectedCustomer.Holidays),
     };
 
-    // server PUT for customer (best-effort)
     let updatedCustomer = { id: selectedCustomer.id, ...custPayload };
     try {
       const res = await fetch(`/api/bulk-customers/${selectedCustomer.id}`, {
@@ -356,19 +383,18 @@ export default function Bulkcustomers() {
           company_name: row.company_name ?? custPayload.company_name,
           mobile_number: row.mobile_number ?? custPayload.mobile_number,
           area: row.area ?? custPayload.area,
-          default_quantity_weekdays: row.default_quantity_weekdays ?? custPayload.default_quantity_weekdays,
           indent_type: row.indent_type ?? custPayload.indent_type,
           payment_term: row.payment_term ?? custPayload.payment_term,
+          default_quantity_weekdays: row.default_quantity_weekdays ?? custPayload.default_quantity_weekdays,
           Saturday: row.Saturday ?? custPayload.Saturday,
           Sunday: row.Sunday ?? custPayload.Sunday,
           Holidays: row.Holidays ?? custPayload.Holidays,
         };
       }
     } catch (err) {
-      // fallback to local
+      // fallback to local update
     }
 
-    // update local list
     const next = bulkCustomers.map((c) =>
       String(c.id) === String(selectedCustomer.id)
         ? {
@@ -376,9 +402,9 @@ export default function Bulkcustomers() {
             company_name: updatedCustomer.company_name,
             mobile_number: updatedCustomer.mobile_number,
             area: updatedCustomer.area,
-            default_quantity_weekdays: updatedCustomer.default_quantity_weekdays,
             indent_type: updatedCustomer.indent_type,
             payment_term: updatedCustomer.payment_term,
+            default_quantity_weekdays: updatedCustomer.default_quantity_weekdays,
             Saturday: updatedCustomer.Saturday,
             Sunday: updatedCustomer.Sunday,
             Holidays: updatedCustomer.Holidays,
@@ -387,27 +413,6 @@ export default function Bulkcustomers() {
     );
     setBulkCustomers(next);
     persist(next);
-
-    // Upsert monthly row
-    try {
-      const monthYear = selectedCustomer.monthYear || monthFirstFor();
-      const monthlyPayload = {
-        company_id: updatedCustomer.id,
-        month_year: monthYear,
-        quantity_weekdays: selectedCustomer.quantity_weekdays === "" ? null : Number(selectedCustomer.quantity_weekdays),
-        quantity_saturday: selectedCustomer.quantity_saturday === "" ? null : Number(selectedCustomer.quantity_saturday),
-        quantity_sunday: selectedCustomer.quantity_sunday === "" ? null : Number(selectedCustomer.quantity_sunday),
-        quantity_holidays: selectedCustomer.quantity_holidays === "" ? null : Number(selectedCustomer.quantity_holidays),
-      };
-
-      await fetch("/api/monthly-bulk-indents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(monthlyPayload),
-      });
-    } catch (err) {
-      // ignore server failure
-    }
 
     setSaving(false);
     setShowEditModal(false);
@@ -451,12 +456,19 @@ export default function Bulkcustomers() {
                       tabIndex={0}
                       onKeyDown={(e) => e.key === "Enter" && openEdit(c)}
                     >
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{c.company_name}</div>
-                        <div style={{ color: "#6B7280", fontSize: 13 }}>
-                          {c.mobile_number} {c.area ? `• ${c.area}` : ""}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {c.company_name}
+                        </div>
+
+                        <div style={{ color: "#6B7280", fontSize: 13, marginTop: 6 }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {c.mobile_number || "—"}
+                          </span>
+                          {c.area ? <span style={{ color: "#94A3B8", marginLeft: 8 }}>• {c.area}</span> : null}
                         </div>
                       </div>
+
                       <div>
                         <button
                           title="Delete"
@@ -486,7 +498,7 @@ export default function Bulkcustomers() {
         <div style={styles.modalOverlay} onClick={() => setShowAddModal(false)}>
           <div style={styles.modalSheet} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <strong style={{ fontSize: 16 }}>Bulk Customer</strong>
+              <strong style={{ fontSize: 16 }}>Add Bulk Customer</strong>
               <button onClick={() => setShowAddModal(false)} style={{ border: "none", background: "transparent", fontSize: 20 }} aria-label="Close">
                 ×
               </button>
@@ -515,6 +527,88 @@ export default function Bulkcustomers() {
                 onChange={(e) => setNewCustomer((s) => ({ ...s, area: e.target.value }))}
               />
 
+              {/* Default Quantity block */}
+              <div style={{ marginTop: 8 }}>
+                <div style={styles.label}>Default Quantity (weekdays)</div>
+                <input
+                  style={styles.input}
+                  value={newCustomer.default_quantity_weekdays}
+                  onChange={(e) => setNewCustomer((s) => ({ ...s, default_quantity_weekdays: e.target.value }))}
+                  type="number"
+                  step="0.01"
+                />
+
+                {/* indent_type + payment_term grouped here */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  <div>
+                    <div style={styles.label}>Indent type</div>
+                    <select
+                      style={styles.input}
+                      value={newCustomer.indent_type}
+                      onChange={(e) => setNewCustomer((s) => ({ ...s, indent_type: e.target.value }))}
+                    >
+                      <option value="">Select indent type</option>
+                      {(indentTypes || FALLBACK_INDENT_TYPES).map((it) => (
+                        <option key={it} value={it}>
+                          {it}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={styles.label}>Payment term</div>
+                    <select
+                      style={styles.input}
+                      value={newCustomer.payment_term}
+                      onChange={(e) => setNewCustomer((s) => ({ ...s, payment_term: e.target.value }))}
+                    >
+                      <option value="">Select payment term</option>
+                      {(paymentTerms || FALLBACK_PAYMENT_TERMS).map((pt) => (
+                        <option key={pt} value={pt}>
+                          {pt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Saturday / Sunday / Holidays */}
+              <div style={styles.fieldGrid}>
+                <div>
+                  <div style={styles.label}>Saturday</div>
+                  <input
+                    style={styles.input}
+                    value={newCustomer.Saturday}
+                    onChange={(e) => setNewCustomer((s) => ({ ...s, Saturday: e.target.value }))}
+                    type="number"
+                    step="0.01"
+                  />
+                </div>
+                <div>
+                  <div style={styles.label}>Sunday</div>
+                  <input
+                    style={styles.input}
+                    value={newCustomer.Sunday}
+                    onChange={(e) => setNewCustomer((s) => ({ ...s, Sunday: e.target.value }))}
+                    type="number"
+                    step="0.01"
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 8 }}>
+                <div style={styles.label}>Holidays</div>
+                <input
+                  style={styles.input}
+                  value={newCustomer.Holidays}
+                  onChange={(e) => setNewCustomer((s) => ({ ...s, Holidays: e.target.value }))}
+                  type="number"
+                  step="0.01"
+                />
+              </div>
+
               <div style={{ display: "flex", gap: 8 }}>
                 <button type="button" style={styles.btnSecondary} onClick={() => setShowAddModal(false)}>
                   Cancel
@@ -528,7 +622,7 @@ export default function Bulkcustomers() {
         </div>
       )}
 
-      {/* Bottom-sheet Edit Modal (customer + monthly fields) */}
+      {/* Bottom-sheet Edit Modal (customer fields only) */}
       {showEditModal && selectedCustomer && (
         <div
           style={styles.modalOverlay}
@@ -573,7 +667,8 @@ export default function Bulkcustomers() {
                 <input style={styles.input} value={selectedCustomer.area} onChange={(e) => handleEditField("area", e.target.value)} />
               </div>
 
-              <div style={{ marginBottom: 8 }}>
+              {/* Default Quantity block with indent_type & payment_term grouped under it */}
+              <div style={{ marginTop: 8 }}>
                 <div style={styles.label}>Default Quantity (weekdays)</div>
                 <input
                   style={styles.input}
@@ -582,16 +677,39 @@ export default function Bulkcustomers() {
                   type="number"
                   step="0.01"
                 />
-              </div>
 
-              <div style={styles.fieldGrid}>
-                <div>
-                  <div style={styles.label}>Indent type</div>
-                  <input style={styles.input} value={selectedCustomer.indent_type ?? ""} onChange={(e) => handleEditField("indent_type", e.target.value)} />
-                </div>
-                <div>
-                  <div style={styles.label}>Payment term</div>
-                  <input style={styles.input} value={selectedCustomer.payment_term ?? ""} onChange={(e) => handleEditField("payment_term", e.target.value)} />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+                  <div>
+                    <div style={styles.label}>Indent type</div>
+                    <select
+                      style={styles.input}
+                      value={selectedCustomer.indent_type ?? ""}
+                      onChange={(e) => handleEditField("indent_type", e.target.value)}
+                    >
+                      <option value="">Select indent type</option>
+                      {(indentTypes || FALLBACK_INDENT_TYPES).map((it) => (
+                        <option key={it} value={it}>
+                          {it}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={styles.label}>Payment term</div>
+                    <select
+                      style={styles.input}
+                      value={selectedCustomer.payment_term ?? ""}
+                      onChange={(e) => handleEditField("payment_term", e.target.value)}
+                    >
+                      <option value="">Select payment term</option>
+                      {(paymentTerms || FALLBACK_PAYMENT_TERMS).map((pt) => (
+                        <option key={pt} value={pt}>
+                          {pt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -609,56 +727,6 @@ export default function Bulkcustomers() {
               <div style={{ marginBottom: 8 }}>
                 <div style={styles.label}>Holidays</div>
                 <input style={styles.input} value={selectedCustomer.Holidays ?? ""} onChange={(e) => handleEditField("Holidays", e.target.value)} type="number" step="0.01" />
-              </div>
-
-              {/* Monthly quantities section */}
-              <div style={{ marginTop: 12, marginBottom: 8 }}>
-                <div style={{ fontWeight: 700, marginBottom: 8 }}>Monthly Indent (month start: {selectedCustomer.monthYear})</div>
-
-                <div style={{ marginBottom: 8 }}>
-                  <div style={styles.label}>Quantity (weekdays)</div>
-                  <input
-                    style={styles.input}
-                    value={selectedCustomer.quantity_weekdays ?? ""}
-                    onChange={(e) => handleEditField("quantity_weekdays", e.target.value)}
-                    type="number"
-                    step="0.01"
-                  />
-                </div>
-
-                <div style={styles.fieldGrid}>
-                  <div>
-                    <div style={styles.label}>Quantity (Saturday)</div>
-                    <input
-                      style={styles.input}
-                      value={selectedCustomer.quantity_saturday ?? ""}
-                      onChange={(e) => handleEditField("quantity_saturday", e.target.value)}
-                      type="number"
-                      step="0.01"
-                    />
-                  </div>
-                  <div>
-                    <div style={styles.label}>Quantity (Sunday)</div>
-                    <input
-                      style={styles.input}
-                      value={selectedCustomer.quantity_sunday ?? ""}
-                      onChange={(e) => handleEditField("quantity_sunday", e.target.value)}
-                      type="number"
-                      step="0.01"
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: 8 }}>
-                  <div style={styles.label}>Quantity (Holidays)</div>
-                  <input
-                    style={styles.input}
-                    value={selectedCustomer.quantity_holidays ?? ""}
-                    onChange={(e) => handleEditField("quantity_holidays", e.target.value)}
-                    type="number"
-                    step="0.01"
-                  />
-                </div>
               </div>
 
               <div style={{ display: "flex", gap: 8 }}>
