@@ -43,7 +43,7 @@ const styles = {
 
   // --- PROFILE HEADER (Updated Colors) ---
   profileHeader: {
-    background: "#ffb900",
+    background: "#ffb900ad",
     borderRadius: 20,
     padding: "24px",
     display: "flex",
@@ -51,6 +51,7 @@ const styles = {
     gap: 16,
     color: "#FFFFFF",
     marginBottom: "24px",
+    marginTop: "24px",
   },
   avatar: {
     width: 64,
@@ -159,8 +160,8 @@ export default function ProfilePage() {
   };
   const handleChangePassword = () => router.push("/profile/change-password");
   const goToBulkCustomers = () => router.push("/bulk-customers");
-  const goToDeliveryPartners = () => router.push("/delivery-partners");
-  const goToRoutes = () => router.push("/routes");
+  const goToDeliveryPartners = () => router.push("/Deliverypartners");
+  const goToRoutes = () => router.push("/Routes");
 
   if (!user) {
     return <div style={styles.page}></div>; // Render empty page or a loader
@@ -177,6 +178,7 @@ export default function ProfilePage() {
         <div style={styles.contentArea}>
           <div style={styles.container}>
             {/* --- Profile Header --- */}
+            
             <div style={styles.profileHeader}>
               <div style={styles.avatar}>{user.avatarInitials}</div>
               <div>
@@ -186,12 +188,7 @@ export default function ProfilePage() {
             </div>
 
             {/* --- Account Information Section (with account icon) --- */}
-            <div style={styles.sectionTitleRow}>
-              <div style={styles.smallIconWrapper}>
-                <HiOutlineUser size={ICON_SIZE} color={ICON_COLOR} />
-              </div>
-              <div style={styles.sectionTitle}>Account Information</div>
-            </div>
+         
 
             <div style={styles.listCard}>
               <div style={{ ...styles.listItem, borderTop: "none" }}>
@@ -228,13 +225,7 @@ export default function ProfilePage() {
                 <div style={styles.itemChevron}>›</div>
               </div>
 
-              <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToBulkCustomers}>
-                <div style={styles.smallIconWrapper}>
-                  <HiOutlineOfficeBuilding size={ICON_SIZE} color={ICON_COLOR} />
-                </div>
-                <div style={styles.listItemContent}>Manage Bulk Customers</div>
-                <div style={styles.itemChevron}>›</div>
-              </div>
+        
 
               <div style={{ ...styles.listItem, ...styles.listItemClickable }} onClick={goToDeliveryPartners}>
                 <div style={styles.smallIconWrapper}>
