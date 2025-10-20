@@ -287,9 +287,10 @@ function Maindash() {
       </div>
 
       {/* Bottom Modal for Mobile */}
-      {showIndentModal && (
-        <div className="fixed inset-0 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
-          <div className="bg-white rounded-t-2xl md:rounded-lg w-full md:max-w-4xl h-[90vh] md:max-h-[90vh] overflow-hidden flex flex-col md:shadow-lg">
+{showIndentModal && (
+  <div className="fixed inset-0 flex items-end md:items-center justify-center z-50 bg-black/40">
+    <div className="bg-white rounded-t-none md:rounded-lg w-full md:max-w-4xl h-[90vh] md:max-h-[90vh] flex flex-col md:shadow-lg border-none outline-none">
+
             {/* Modal Header */}
             <div className="flex justify-between items-center p-4 md:p-6  bg-white">
               <h2 className="text-xl font-semibold text-gray-800">
