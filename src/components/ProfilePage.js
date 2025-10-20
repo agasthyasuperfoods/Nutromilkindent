@@ -158,8 +158,8 @@ export default function ProfilePage() {
       router.replace("/Alogin");
     }
   };
-  const handleChangePassword = () => router.push("/profile/change-password");
-  const goToBulkCustomers = () => router.push("/bulk-customers");
+  const handleChangePassword = () => router.push("/profile/");
+  const goToBulkCustomers = () => router.push("/Bulkindent");
   const goToDeliveryPartners = () => router.push("/Deliverypartners");
   const goToRoutes = () => router.push("/Routes");
 

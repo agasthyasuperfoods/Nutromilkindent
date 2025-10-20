@@ -324,7 +324,10 @@ export default function DeliveryPartner() {
                   {partners.map((p) => (
                     <div key={p.employee_id} style={styles.item}>
                       <div style={styles.left}>
-                        <div style={styles.title}>
+                        <div style={styles.title}    onClick={() => {
+                            setForm(p);
+                            setShowEdit(true);
+                          }}> 
                           {p.delivery_boy_name} <span style={{ color: "#94A3B8" }}>#{p.employee_id}</span>
                         </div>
                         <div style={styles.metaRow}>{p.mobile_number} • {p.delivery_area}</div>
