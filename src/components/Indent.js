@@ -1,20 +1,15 @@
 // src/components/Indent.js
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
+import Swal from "sweetalert2";
+import "sweetalert2/dist/sweetalert2.min.css";
 
 /**
  * Indent component (4-step workflow)
- *  Step 1: Delivery Boys
- *  Step 2: Bulk Customers
- *  Step 3: Junnu Milk Assignment (assign to delivery boy OR bulk customer)
- *  Step 4: Review + Submit (previous UI restored)
- *
- * Notes:
- *  - Delivery boys fetched from /api/delivery-boys
- *  - Bulk customers fetched from /api/bulk-customers?date=YYYY-MM-DD
- *  - Default delivery qty = 33 L
- *  - Delivery image: /milkpacket.png
- *  - Bulk image: /milkcans.png
+ * Step 1: Delivery Boys
+ * Step 2: Bulk Customers
+ * Step 3: Junnu Milk Assignment (assign to delivery boy OR bulk customer)
+ * Step 4: Review + Submit
  */
 
 function PlaceholderLogo({ className = "w-6 h-6 text-gray-400" }) {
@@ -180,26 +175,77 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
   const formatDate = (d) =>
     new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
-  const submit = async () => {
-    const payload = {
-      date: selectedDate,
-      deliveryBoys,
-      bulkCustomers,
-      junnuList,
-      totals: { delivery: totalDelivery, bulk: totalBulk, junnu: totalJunnu, grand: grandTotal },
-    };
-    try {
-      await fetch("/api/indents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } catch (err) {
-      console.warn("submit failed", err);
-    }
-    alert(`Indent submitted — Grand total ${grandTotal} L`);
+  // 🔴 FINAL SUBMIT FUNCTION TO SEND DATA TO THE NEW API
+ const submit = async () => {
+  const deliveryEntries = deliveryBoys
+    .filter(d => Number(d.milkQuantity) > 0)
+    .map((d) => ({
+      date: selectedDate.toISOString().slice(0, 10),
+      delivery_boy_id: String(d.id),
+      company_id: null,
+      company_name: d.name,
+      quantity: Number(d.milkQuantity),
+      item_type: "REGULAR_MILK",
+    }));
+
+  const bulkEntries = bulkCustomers
+    .filter(c => Number(c.totalMilk) > 0)
+    .map((c) => ({
+      date: selectedDate.toISOString().slice(0, 10),
+      delivery_boy_id: null,
+      company_id: String(c.id),
+      company_name: c.name,
+      quantity: Number(c.totalMilk),
+      item_type: "REGULAR_MILK",
+    }));
+
+  const junnuEntries = junnuList
+    .filter(j => Number(j.qty) > 0 && j.assignedType)
+    .map((j) => {
+      const isDelivery = j.assignedType === "delivery";
+      return {
+        date: selectedDate.toISOString().slice(0, 10),
+        delivery_boy_id: isDelivery ? String(j.assignedId) : null,
+        company_id: isDelivery ? null : String(j.assignedId),
+        company_name: j.assignedName,
+        quantity: Number(j.qty),
+        item_type: "JUNNU_MILK",
+      };
+    });
+
+  const payload = [...deliveryEntries, ...bulkEntries, ...junnuEntries];
+
+  try {
+    const res = await fetch("/api/indents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Submission failed");
+
+    await Swal.fire({
+      icon: "success",
+      title: "Indent Submitted!",
+      html: `<strong>Grand Total:</strong> ${data.grandTotal || 0} L`,
+      confirmButtonColor: "#f59e0b",
+    });
+
     onClose();
-  };
+  } catch (err) {
+    console.error("Submit failed:", err);
+    Swal.fire({
+      icon: "error",
+      title: "Submission Failed",
+      text: err.message || "Check console for details",
+      confirmButtonColor: "#f43f5e",
+    });
+  }
+};
+
+
+
 
   /* ---------------- render ---------------- */
   return (
@@ -319,95 +365,94 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
           </section>
         )}
 
-        {/* Step 3: Junnu Assignment (supports delivery + bulk assignees) */}
-      {/* Step 3: Junnu Milk Assignment (Card Layout) */}
-{step === 3 && (
-  <section className="space-y-4">
-    <h2 className="text-lg font-semibold text-gray-800">Junnu Milk Assignment</h2>
-    <p className="text-sm text-gray-600">Assign Junnu milk to delivery boys or bulk customers. Each record represents a Junnu dispatch.</p>
+        {/* Step 3: Junnu Assignment (Card Layout) */}
+        {step === 3 && (
+          <section className="space-y-4">
+            <h2 className="text-lg font-semibold text-gray-800">Junnu Milk Assignment</h2>
+            <p className="text-sm text-gray-600">Assign Junnu milk to delivery boys or bulk customers. Each record represents a Junnu dispatch.</p>
 
-    <div className="space-y-3">
-      {junnuList.map((row) => (
-        <div key={row.id} className="bg-white rounded-lg border border-gray-200 p-3 flex items-center">
-          {/* Left side: dropdown */}
-          <div className="flex-1 min-w-0 pr-4">
-            <label className="block text-xs text-gray-600 mb-1">Assign To</label>
-            <select
-              value={row.assignedType ? `${row.assignedType}:${row.assignedId}` : ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (!val) updateJunnuAssignee(row.id, "", "");
-                else {
-                  const [type, id] = val.split(":");
-                  updateJunnuAssignee(row.id, type, id);
-                }
-              }}
-              className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-amber-300"
-            >
-              <option value="">Select Customer</option>
-              <optgroup label="Delivery Boys">
-                {deliveryBoys.map((b) => (
-                  <option key={`d-${b.id}`} value={`delivery:${b.id}`}>
-                    {b.name} {b.area ? `— ${b.area}` : ""}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Bulk Customers">
-                {bulkCustomers.map((c) => (
-                  <option key={`b-${c.id}`} value={`bulk:${c.id}`}>
-                    {c.name} {c.area ? `— ${c.area}` : ""}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
+            <div className="space-y-3">
+              {junnuList.map((row) => (
+                <div key={row.id} className="bg-white rounded-lg border border-gray-200 p-3 flex items-center">
+                  {/* Left side: dropdown */}
+                  <div className="flex-1 min-w-0 pr-4">
+                    <label className="block text-xs text-gray-600 mb-1">Assign To</label>
+                    <select
+                      value={row.assignedType ? `${row.assignedType}:${row.assignedId}` : ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) updateJunnuAssignee(row.id, "", "");
+                        else {
+                          const [type, id] = val.split(":");
+                          updateJunnuAssignee(row.id, type, id);
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-amber-300"
+                    >
+                      <option value="">Select Customer</option>
+                      <optgroup label="Delivery Boys">
+                        {deliveryBoys.map((b) => (
+                          <option key={`d-${b.id}`} value={`delivery:${b.id}`}>
+                            {b.name} {b.area ? `— ${b.area}` : ""}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Bulk Customers">
+                        {bulkCustomers.map((c) => (
+                          <option key={`b-${c.id}`} value={`bulk:${c.id}`}>
+                            {c.name} {c.area ? `— ${c.area}` : ""}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
 
-          {/* Right side: qty + image */}
-          <div className="flex items-center gap-4">
-            <div className="w-28">
-              <label className="block text-xs text-gray-600 text-right">Qty (L)</label>
-              <input
-                type="number"
-                min="0"
-                placeholder="0"
-                value={row.qty ?? ""}
-                onChange={(e) => updateJunnuQty(row.id, e.target.value)}
-                className="w-full mt-1 rounded-md border border-gray-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-amber-300"
-              />
+                  {/* Right side: qty + image */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-28">
+                      <label className="block text-xs text-gray-600 text-right">Qty (L)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={row.qty ?? ""}
+                        onChange={(e) => updateJunnuQty(row.id, e.target.value)}
+                        className="w-full mt-1 rounded-md border border-gray-200 px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      />
+                    </div>
+
+                    <div className="flex-shrink-0" style={{ width: 80, height: 80, position: "relative" }}>
+                      <Image src="/junnu.png" alt="Junnu Milk" layout="fill" objectFit="contain" />
+                    </div>
+                  </div>
+
+                  {/* Delete button (optional) */}
+                  <button
+                    type="button"
+                    onClick={() => removeJunnuRow(row.id)}
+                    className="ml-3 text-red-500 hover:text-red-700 text-lg"
+                    title="Remove entry"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
             </div>
 
-            <div className="flex-shrink-0" style={{ width: 80, height: 80, position: "relative" }}>
-              <Image src="/junnu.png" alt="Junnu Milk" layout="fill" objectFit="contain" />
+            <div className="flex justify-between items-center mt-3">
+              <button
+                type="button"
+                onClick={addJunnuRow}
+                className="px-3 py-2 bg-amber-100 text-amber-700 rounded-md text-sm hover:bg-amber-200"
+              >
+                + Add Another
+              </button>
+              <div className="text-sm text-gray-700">
+                Total Junnu: <span className="font-semibold text-amber-700">{totalJunnu} L</span>
+              </div>
             </div>
-          </div>
-
-          {/* Delete button (optional) */}
-          <button
-            type="button"
-            onClick={() => removeJunnuRow(row.id)}
-            className="ml-3 text-red-500 hover:text-red-700 text-lg"
-            title="Remove entry"
-          >
-            ✕
-          </button>
-        </div>
-      ))}
-    </div>
-
-    <div className="flex justify-between items-center mt-3">
-      <button
-        type="button"
-        onClick={addJunnuRow}
-        className="px-3 py-2 bg-amber-100 text-amber-700 rounded-md text-sm hover:bg-amber-200"
-      >
-        + Add Another
-      </button>
-      <div className="text-sm text-gray-700">
-        Total Junnu: <span className="font-semibold text-amber-700">{totalJunnu} L</span>
-      </div>
-    </div>
-  </section>
-)}
+          </section>
+        )}
 
 
         {/* Step 4: Review (restored earlier UI you liked) */}
