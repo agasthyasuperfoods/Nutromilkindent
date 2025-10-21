@@ -20,30 +20,25 @@ function PlaceholderLogo({ className = "w-6 h-6 text-gray-400" }) {
     </svg>
   );
 }
-
 export default function Indent({ selectedDate = new Date(), onClose = () => {} }) {
   const [step, setStep] = useState(1);
   const [deliveryBoys, setDeliveryBoys] = useState([]);
   const [bulkCustomers, setBulkCustomers] = useState([]);
-
   // Junnu list entries: each row: { id, assignedType: 'delivery'|'bulk'|'', assignedId: '', assignedName:'', qty: '0' }
   const [junnuList, setJunnuList] = useState([{ id: Date.now(), assignedType: "", assignedId: "", assignedName: "", qty: "0" }]);
-
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingDelivery, setLoadingDelivery] = useState(true);
   const [loadingBulk, setLoadingBulk] = useState(true);
-
   /* ---------------- fallback data ---------------- */
   const fallbackDelivery = [
     { id: 1, name: "Raj Kumar", area: "Area A", mobile: "9000000001", milkQuantity: "33", image: null },
     { id: 2, name: "Suresh Patel", area: "Area B", mobile: "9000000002", milkQuantity: "33", image: null },
     { id: 3, name: "Amit Sharma", area: "Area C", mobile: "9000000003", milkQuantity: "33", image: null },
   ];
-
   const fallbackBulk = [
     { id: 101, name: "Hotel Grand", area: "Market Road", totalMilk: "120", month_year: null, image: null },
     { id: 102, name: "Restaurant Spice", area: "Station St", totalMilk: "85", month_year: null, image: null },
   ];
-
   /* ---------------- fetch delivery boys ---------------- */
   useEffect(() => {
     let mounted = true;
@@ -176,10 +171,11 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
   // 🔴 FINAL SUBMIT FUNCTION TO SEND DATA TO THE NEW API
- const submit = async () => {
+const submit = async () => {
+  setIsSubmitting(true); // show loader
   const deliveryEntries = deliveryBoys
     .filter(d => Number(d.milkQuantity) > 0)
-    .map((d) => ({
+    .map(d => ({
       date: selectedDate.toISOString().slice(0, 10),
       delivery_boy_id: String(d.id),
       company_id: null,
@@ -190,7 +186,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
 
   const bulkEntries = bulkCustomers
     .filter(c => Number(c.totalMilk) > 0)
-    .map((c) => ({
+    .map(c => ({
       date: selectedDate.toISOString().slice(0, 10),
       delivery_boy_id: null,
       company_id: String(c.id),
@@ -201,7 +197,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
 
   const junnuEntries = junnuList
     .filter(j => Number(j.qty) > 0 && j.assignedType)
-    .map((j) => {
+    .map(j => {
       const isDelivery = j.assignedType === "delivery";
       return {
         date: selectedDate.toISOString().slice(0, 10),
@@ -241,6 +237,8 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       text: err.message || "Check console for details",
       confirmButtonColor: "#f43f5e",
     });
+  } finally {
+    setIsSubmitting(false); // hide loader
   }
 };
 
@@ -579,13 +577,23 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
                 Next
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={submit}
-                className="w-full h-12 flex items-center justify-center rounded-md bg-amber-600 text-white hover:bg-amber-700 text-lg"
-              >
-                Submit Indent
-              </button>
+     <button
+  type="button"
+  onClick={submit}
+  disabled={isSubmitting} // prevent multiple clicks
+  className={`w-full h-12 flex items-center justify-center rounded-md bg-amber-600 text-white hover:bg-amber-700 text-lg ${
+    isSubmitting ? "cursor-not-allowed opacity-70" : ""
+  }`}
+>
+  {isSubmitting ? (
+    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+    </svg>
+  ) : (
+    "Submit Indent"
+  )}
+</button>
             )}
           </div>
         </div>
