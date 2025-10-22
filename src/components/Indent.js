@@ -806,7 +806,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
   {step < 4 ? (
     <button
       onClick={next}
-      className="px-12 py-2 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition"
+      className="px-19 py-2 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition"
     >
       Next &rarr;
     </button>
@@ -814,7 +814,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     <button
       onClick={submit}
       disabled={isSubmitting}
-      className={`px-12 py-2 rounded-md font-medium transition ${
+      className={`px-12  py-2 rounded-md font-medium transition ${
         isSubmitting
           ? "bg-amber-300 text-white cursor-wait"
           : "bg-amber-500 text-white hover:bg-amber-600"
