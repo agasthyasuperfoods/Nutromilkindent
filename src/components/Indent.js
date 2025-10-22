@@ -789,46 +789,41 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
         )}
       </main>
 
-      {/* footer / navigation */}
-      <footer className="flex justify-between p-4 border-t bg-white">
-        <button
-          onClick={prev}
-          disabled={step === 1 || isSubmitting}
-          className={`px-4 py-2 rounded-md font-medium transition ${
-            step === 1 || isSubmitting
-              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-              : "bg-gray-300 text-gray-700 hover:bg-gray-400"
-          }`}
-        >
-          &larr; Back
-        </button>
+      {/* footer / navigation - BIG BUTTONS */}
+<footer className="flex justify-between p-4 bg-white">
+  <button
+    onClick={prev}
+    disabled={step === 1 || isSubmitting}
+    className={`px-16 py-2 rounded-md font-medium transition ${
+      step === 1 || isSubmitting
+        ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+        : "bg-gray-300 text-gray-700 hover:bg-gray-400"
+    }`}
+  >
+    &larr; Back
+  </button>
 
-        <div className="flex items-center space-x-4">
-          <div className="text-sm font-semibold text-gray-800">
-            Total Indent: <span className="text-green-700">{grandTotal} L</span>
-          </div>
-          {step < 4 ? (
-            <button
-              onClick={next}
-              className="px-4 py-2 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition"
-            >
-              Next &rarr;
-            </button>
-          ) : (
-            <button
-              onClick={submit}
-              disabled={isSubmitting}
-              className={`px-4 py-2 rounded-md font-medium transition ${
-                isSubmitting
-                  ? "bg-green-300 text-white cursor-wait"
-                  : "bg-green-600 text-white hover:bg-green-700"
-              }`}
-            >
-              {isSubmitting ? "Submitting..." : "Submit & Save"}
-            </button>
-          )}
-        </div>
-      </footer>
+  {step < 4 ? (
+    <button
+      onClick={next}
+      className="px-12 py-2 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition"
+    >
+      Next &rarr;
+    </button>
+  ) : (
+    <button
+      onClick={submit}
+      disabled={isSubmitting}
+      className={`px-12 py-2 rounded-md font-medium transition ${
+        isSubmitting
+          ? "bg-amber-300 text-white cursor-wait"
+          : "bg-amber-500 text-white hover:bg-amber-600"
+      }`}
+    >
+      {isSubmitting ? "Submitting..." : "Submit & Save"}
+    </button>
+  )}
+</footer>
     </div>
   );
 }
