@@ -147,7 +147,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       assignedName = found ? found.name : "";
     } else if (assignedType === "bulk") {
       const found = bulkCustomers.find((c) => String(c.id) === String(assignedId));
-      assignedName = found ? found.name : "";
+      assignedName = found ? c.name : "";
     }
     setJunnuList((p) => p.map((r) => (r.id === rowId ? { ...r, assignedType, assignedId, assignedName } : r)));
   };
@@ -169,13 +169,167 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
   const formatDate = (d) =>
     new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
-  /* ---------------- PDF generator (client-side) ----------------
+
+  /* ---------------- NEW PDF Invoice Generator (client-side) ----------------
+     Generates a structured PDF resembling an invoice/bill, using review screen data.
      Returns: base64 string (no data: prefix)
   */
-  const generatePdfBase64 = () => {
+ const generateInvoicePdfBase64 = () => {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const margin = 36;
+  const col1 = 36; // SI No.
+  const col2 = 300; // Item Name
+  const col3 = 400; // QTY (L)
+  const col4 = 480; // Type
+  const pageWidth = 595;
+  const pageHeight = 842;
+  let y = margin;
+  const lineHeight = 14;
+
+  // --- HEADER & LOGO ---
+  doc.setFont("Helvetica", "Bold");
+  doc.setFontSize(20);
+  doc.text("NutroMilk Indent Report", pageWidth / 2, y, { align: "center" });
+  y += 24;
+
+  // Company Logo
+  try {
+    doc.addImage("/logo.png", "PNG", col1, y - 5, 50, 50);
+  } catch (e) {
+    console.warn("Logo not found, using text fallback:", e);
+    doc.setDrawColor(200);
+    doc.rect(col1, y - 5, 50, 50);
+    doc.setFontSize(10);
+    doc.text("Agasthya Nutromilk", col1 + 25, y + 20, { align: 'center' });
+    doc.text("LOGO", col1 + 25, y + 32, { align: 'center' });
+  }
+
+  // Company Details
+  doc.setFontSize(10);
+  doc.setFont("Helvetica", "Normal");
+  doc.text("Agasthya Nutromilk", col2, y);
+  doc.text("Phone: +91-8121001774", col2, y + lineHeight);
+  doc.text("Email: info.anm@agasthya.co.in", col2, y + lineHeight * 2);
+  y += 60;
+
+  // Indent Date Box
+  doc.setDrawColor(0);
+  doc.rect(col1, y, pageWidth - 2 * margin, 20);
+  doc.setFont("Helvetica", "Bold");
+  doc.text("INDENT FOR DELIVERY ON:", col1 + 5, y + 13);
+  doc.setFont("Helvetica", "Normal");
+  doc.text(formatDate(selectedDate), col1 + 180, y + 13);
+  doc.text("Generated:", col4 - 100, y + 13);
+  doc.text(new Date().toLocaleDateString('en-GB'), col4 - 35, y + 13);
+  y += 30;
+
+  // --- ITEMS TABLE HEADER ---
+  doc.setFillColor(230, 230, 230);
+  doc.rect(col1, y, pageWidth - 2 * margin, 20, 'F');
+  doc.setFontSize(10);
+  doc.setFont("Helvetica", "Bold");
+  doc.text("SI No.", col1 + 5, y + 13);
+  doc.text("ITEM / ASSIGNED TO", col1 + 60, y + 13);
+  doc.text("QTY (L)", col3 + 15, y + 13, { align: 'right' });
+  doc.text("TYPE", col4 + 5, y + 13);
+  y += 20;
+
+  // --- ITEMS TABLE BODY ---
+  doc.setFont("Helvetica", "Normal");
+  doc.setFontSize(10);
+  let siNo = 1;
+
+  const drawRow = (name, quantity, type) => {
+    if (y > pageHeight - margin - 150) {
+      doc.addPage();
+      y = margin;
+      // Redraw table header on new page
+      doc.setFillColor(230, 230, 230);
+      doc.rect(col1, y, pageWidth - 2 * margin, 20, 'F');
+      doc.setFont("Helvetica", "Bold");
+      doc.text("SI No.", col1 + 5, y + 13);
+      doc.text("ITEM / ASSIGNED TO", col1 + 60, y + 13);
+      doc.text("QTY (L)", col3 + 15, y + 13, { align: 'right' });
+      doc.text("TYPE", col4 + 5, y + 13);
+      y += 20;
+      doc.setFont("Helvetica", "Normal");
+    }
+
+    doc.text(String(siNo++), col1 + 5, y + 10);
+    doc.text(name, col1 + 60, y + 10);
+    doc.text(String(Number(quantity || 0)), col3 + 15, y + 10, { align: 'right' });
+    doc.text(type, col4 + 5, y + 10);
+    doc.line(col1, y + 14, pageWidth - margin, y + 14);
+    y += 14;
+  };
+
+  // 1. Delivery Milk (Regular)
+  deliveryBoys.filter(d => Number(d.milkQuantity) > 0).forEach(d => {
+    drawRow(`${d.name} (${d.area || 'N/A'})`, d.milkQuantity, "Delivery Milk");
+  });
+
+  // 2. Bulk Milk (Regular)
+  bulkCustomers.filter(c => Number(c.totalMilk) > 0).forEach(c => {
+    drawRow(`${c.name} (${c.area || 'N/A'})`, c.totalMilk, "Bulk Milk");
+  });
+
+  // 3. Junnu Milk
+  junnuList.filter(j => Number(j.qty) > 0 && j.assignedType).forEach(j => {
+    drawRow(`${j.assignedName} (${j.assignedType === "delivery" ? "Delivery" : "Bulk"})`, j.qty, "Junnu Milk");
+  });
+
+  // Draw solid lines to fill up to totals box area
+  while (y < 650) {
+    doc.line(col1, y, pageWidth - margin, y);
+    y += 14;
+  }
+  y = 650;
+
+  // --- TOTALS BOX ---
+  const boxX = 390;
+  const boxWidth = 168;
+  let totalY = y;
+
+  const drawTotalRow = (label, value, isBold = false) => {
+    doc.setFontSize(10);
+    doc.setFont("Helvetica", isBold ? "Bold" : "Normal");
+    doc.text(label, boxX + 5, totalY + 13);
+    doc.text(`${value} L`, boxX + boxWidth - 5, totalY + 13, { align: 'right' });
+    totalY += 18;
+  };
+
+  doc.setDrawColor(0);
+  doc.rect(boxX, y, boxWidth, 18 * 4 + 4);
+
+  drawTotalRow("Total Delivery Milk", totalDelivery);
+  drawTotalRow("Total Bulk Milk", totalBulk);
+  drawTotalRow("Total Junnu Milk", totalJunnu);
+
+  // Grand Total Line
+  doc.setLineWidth(1);
+  doc.line(boxX + 2, totalY + 2, boxX + boxWidth - 2, totalY + 2);
+  totalY += 4;
+  doc.setFontSize(12);
+  drawTotalRow("GRAND TOTAL", grandTotal, true);
+
+  // --- FOOTER ---
+  const footerY = pageHeight - margin;
+  doc.setFontSize(8);
+  doc.setFont("Helvetica", "Oblique");
+  doc.text("Terms & Conditions: Items are non-returnable. This is a system-generated indent report.", col1, footerY);
+
+  // return base64 without data: prefix
+  const dataUri = doc.output("datauristring");
+  const commaIndex = dataUri.indexOf(",");
+  return dataUri.slice(commaIndex + 1);
+};
+  /* ---------------- Original generatePdfBase64 (optional, for local review) ---------------- */
+  // You can keep this function if you want a simpler local PDF preview,
+  // but it's not used in the submission logic below.
+  const generatePdfBase64 = () => { /* ... existing simple PDF logic ... */
     const doc = new jsPDF({ unit: "pt", format: "a4" });
     const margin = 40;
-    const pageHeight = 792; // approx points for A4
+    const pageHeight = 792; 
     let y = margin;
 
     doc.setFontSize(16);
@@ -184,188 +338,171 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
 
     doc.setFontSize(10);
     doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
-    y += 18;
+    y += 24; 
 
-    // Delivery section
-    doc.setFontSize(13);
-    doc.text("Delivery", margin, y);
-    y += 16;
-    doc.setFontSize(11);
-    if (deliveryBoys.length === 0) {
-      doc.text("—", margin + 8, y);
-      y += 14;
-    } else {
-      deliveryBoys.forEach((d) => {
-        doc.text(`${d.name} ${d.area ? `(${d.area})` : ""} — ${Number(d.milkQuantity || 0)} L`, margin + 8, y);
-        y += 14;
-        if (y > pageHeight - margin) {
-          doc.addPage();
-          y = margin;
-        }
-      });
-    }
-    y += 8;
-    doc.text(`Total Delivery: ${totalDelivery} L`, margin + 8, y);
-    y += 18;
+    const sections = [
+      {
+        title: "Delivery Summary",
+        items: deliveryBoys,
+        qtyKey: "milkQuantity",
+        total: totalDelivery,
+        totalLabel: "Total Delivery Milk",
+      },
+      {
+        title: "Bulk Summary",
+        items: bulkCustomers,
+        qtyKey: "totalMilk",
+        total: totalBulk,
+        totalLabel: "Total Bulk Milk",
+      },
+      {
+        title: "Junnu Assignment",
+        items: junnuList
+          .filter((j) => j.assignedType && j.assignedName && Number(j.qty) > 0)
+          .map((j) => ({
+            name: `${j.assignedName} (${j.assignedType === "delivery" ? "Delivery" : "Bulk"})`,
+            qty: j.qty,
+          })),
+        qtyKey: "qty",
+        total: totalJunnu,
+        totalLabel: "Total Junnu Milk",
+      },
+    ];
 
-    // Bulk section
-    doc.setFontSize(13);
-    doc.text("Bulk", margin, y);
-    y += 16;
-    doc.setFontSize(11);
-    if (bulkCustomers.length === 0) {
-      doc.text("—", margin + 8, y);
-      y += 14;
-    } else {
-      bulkCustomers.forEach((c) => {
-        doc.text(`${c.name} ${c.area ? `(${c.area})` : ""} — ${Number(c.totalMilk || 0)} L`, margin + 8, y);
-        y += 14;
-        if (y > pageHeight - margin) {
-          doc.addPage();
-          y = margin;
-        }
-      });
-    }
-    y += 8;
-    doc.text(`Total Bulk: ${totalBulk} L`, margin + 8, y);
-    y += 18;
-
-    // Junnu section
-    doc.setFontSize(13);
-    doc.text("Junnu Assignment", margin, y);
-    y += 16;
-    doc.setFontSize(11);
-    junnuList.forEach((j) => {
-      if (j.assignedType && j.assignedName && Number(j.qty) > 0) {
-        doc.text(`${j.assignedName} (${j.assignedType}) — ${Number(j.qty)} L`, margin + 8, y);
-        y += 14;
-        if (y > pageHeight - margin) {
-          doc.addPage();
-          y = margin;
-        }
+    const drawSection = (title, items, qtyKey, totalLabel, total) => {
+      if (y > pageHeight - margin - 40) {
+        doc.addPage();
+        y = margin;
       }
-    });
-    y += 8;
-    doc.text(`Total Junnu: ${totalJunnu} L`, margin + 8, y);
-    y += 18;
 
-    doc.setFontSize(13);
+      doc.setFontSize(13);
+      doc.setFont("Helvetica", "Bold");
+      doc.text(title, margin, y);
+      doc.setFont("Helvetica", "Normal");
+      y += 16;
+      doc.setFontSize(11);
+
+      if (items.length === 0) {
+        doc.text("— No entries —", margin + 8, y);
+        y += 18;
+      } else {
+        items.forEach((item) => {
+          const itemName = item.name + (qtyKey !== "qty" && item.area ? ` (${item.area})` : "");
+          doc.text(`${itemName} — ${Number(item[qtyKey] || 0)} L`, margin + 8, y);
+          y += 14;
+          if (y > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+            doc.setFontSize(11);
+          }
+        });
+
+        y += 6;
+        doc.setFontSize(11);
+        doc.setFont("Helvetica", "Bold");
+        doc.text(`${totalLabel}: ${total} L`, margin + 8, y);
+        doc.setFont("Helvetica", "Normal");
+        y += 22;
+      }
+    };
+
+    sections.forEach((s) => drawSection(s.title, s.items, s.qtyKey, s.totalLabel, s.total));
+
+    y += 10;
+    doc.setFontSize(14);
+    doc.setFont("Helvetica", "Bold");
     doc.text(`Grand Total: ${grandTotal} L`, margin, y);
+    doc.setFont("Helvetica", "Normal");
+    y += 16;
+    doc.setFontSize(10);
+    doc.text(`For delivery on ${formatDate(selectedDate)}`, margin, y);
 
-    // return base64 without data: prefix
     const dataUri = doc.output("datauristring");
     const commaIndex = dataUri.indexOf(",");
     return dataUri.slice(commaIndex + 1);
   };
 
-  // ---------------- FINAL SUBMIT -> send indent, create pdf, upload to OneDrive ----------------
+
+  /* ---------------- submission handler ---------------- */
   const submit = async () => {
-  setIsSubmitting(true);
+    setIsSubmitting(true);
 
-  try {
-    // 1) Build payload for your existing /api/indents
-    const deliveryEntries = deliveryBoys
-      .filter(d => Number(d.milkQuantity) > 0)
-      .map(d => ({
-        date: selectedDate.toISOString().slice(0, 10),
-        delivery_boy_id: String(d.id),
-        company_id: null,
-        company_name: d.name,
-        quantity: Number(d.milkQuantity),
-        item_type: "REGULAR_MILK",
-      }));
+    try {
+      // 1) Build payload for your existing /api/indents
+      const deliveryEntries = deliveryBoys
+        .filter(d => Number(d.milkQuantity) > 0)
+        .map(d => ({
+          date: selectedDate.toISOString().slice(0, 10),
+          delivery_boy_id: String(d.id),
+          company_id: null,
+          company_name: d.name,
+          quantity: Number(d.milkQuantity),
+          item_type: "REGULAR_MILK",
+        }));
 
-    const bulkEntries = bulkCustomers
-      .filter(c => Number(c.totalMilk) > 0)
-      .map(c => ({
-        date: selectedDate.toISOString().slice(0, 10),
-        delivery_boy_id: null,
-        company_id: String(c.id),
-        company_name: c.name,
-        quantity: Number(c.totalMilk),
-        item_type: "REGULAR_MILK",
-      }));
+      const bulkEntries = bulkCustomers
+        .filter(c => Number(c.totalMilk) > 0)
+        .map(c => ({
+          date: selectedDate.toISOString().slice(0, 10),
+          delivery_boy_id: null,
+          company_id: String(c.id),
+          company_name: c.name,
+          quantity: Number(c.totalMilk),
+          item_type: "REGULAR_MILK",
+        }));
 
-    const junnuEntries = junnuList
-      .filter(j => Number(j.qty) > 0 && j.assignedType)
-      .map(j => ({
-        date: selectedDate.toISOString().slice(0, 10),
-        delivery_boy_id: j.assignedType === "delivery" ? String(j.assignedId) : null,
-        company_id: j.assignedType === "bulk" ? String(j.assignedId) : null,
-        company_name: j.assignedName,
-        quantity: Number(j.qty),
-        item_type: "JUNNU_MILK",
-      }));
+      const junnuEntries = junnuList
+        .filter(j => Number(j.qty) > 0 && j.assignedType)
+        .map(j => ({
+          date: selectedDate.toISOString().slice(0, 10),
+          delivery_boy_id: j.assignedType === "delivery" ? String(j.assignedId) : null,
+          company_id: j.assignedType === "bulk" ? String(j.assignedId) : null,
+          company_name: j.assignedName,
+          quantity: Number(j.qty),
+          item_type: "JUNNU_MILK",
+        }));
 
-    const payload = [...deliveryEntries, ...bulkEntries, ...junnuEntries];
+      const payload = [...deliveryEntries, ...bulkEntries, ...junnuEntries];
 
-    // 2) Send to your existing API
-    const res = await fetch("/api/indents", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || "Submission failed");
-
-    // 3) Generate PDF (base64)
-    const doc = new jsPDF({ unit: "pt", format: "a4" });
-    const margin = 40;
-    let y = margin;
-
-    doc.setFontSize(16);
-    doc.text(`Indent • ${new Date(selectedDate).toLocaleDateString()}`, margin, y);
-    y += 22;
-    doc.setFontSize(11);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
-    y += 18;
-
-    const addSection = (title, items, total, key) => {
-      doc.setFontSize(13); doc.text(title, margin, y); y += 16;
-      doc.setFontSize(11);
-      items.forEach(i => {
-        doc.text(`${i.name} — ${Number(i[key] || 0)} L`, margin + 8, y); y += 14;
+      // 2) Send to your existing API
+      const res = await fetch("/api/indents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      doc.text(`Total ${title}: ${total} L`, margin + 8, y); y += 18;
-    };
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Submission failed");
 
-    addSection("Delivery", deliveryBoys, deliveryBoys.reduce((s, d) => s + Number(d.milkQuantity || 0), 0), "milkQuantity");
-    addSection("Bulk", bulkCustomers, bulkCustomers.reduce((s, c) => s + Number(c.totalMilk || 0), 0), "totalMilk");
-    addSection("Junnu", junnuList.filter(j => j.assignedType && Number(j.qty) > 0).map(j => ({ name: j.assignedName, qty: j.qty })), junnuList.reduce((s, j) => s + Number(j.qty || 0), 0), "qty");
+      // 3) Generate PDF (base64) using the new invoice format
+      const pdfBase64 = generateInvoicePdfBase64(); 
 
-    doc.setFontSize(13);
-    doc.text(`Grand Total: ${deliveryEntries.length + bulkEntries.length + junnuEntries.length}`, margin, y);
+      // 4) Upload to OneDrive
+      const fileName = `Indent_Invoice_${selectedDate.toISOString().slice(0, 10)}_${Date.now()}.pdf`;
+      const folderPath = process.env.NEXT_PUBLIC_ONEDRIVE_FOLDER || "";
 
-    const dataUri = doc.output("datauristring");
-    const base64 = dataUri.split(",")[1];
+      const uploadResp = await fetch("/api/upload-to-onedrive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName, fileContent: pdfBase64, folderPath }),
+      });
 
-    // 4) Upload to OneDrive
-    const fileName = `Indent_${selectedDate.toISOString().slice(0,10)}_${Date.now()}.pdf`;
-    const folderPath = process.env.NEXT_PUBLIC_ONEDRIVE_FOLDER || "";
+      const uploadData = await uploadResp.json();
 
-    const uploadResp = await fetch("/api/upload-to-onedrive", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileName, fileContent: base64, folderPath }),
-    });
+      if (!uploadResp.ok) {
+        console.warn("OneDrive upload failed:", uploadData);
+        await Swal.fire({ icon: "warning", title: "Submitted — Upload failed", html: `Saved to DB but failed to upload to OneDrive.<br/>${uploadData.error || ""}`, confirmButtonColor: "#f59e0b" });
+      } else {
+        await Swal.fire({ icon: "success", title: "Indent Submitted & Saved", html: `Saved as: ${fileName}`, confirmButtonColor: "#f59e0b" });
+      }
 
-    const uploadData = await uploadResp.json();
-
-    if (!uploadResp.ok) {
-      console.warn("OneDrive upload failed:", uploadData);
-      await Swal.fire({ icon: "warning", title: "Submitted — Upload failed", html: `Saved to DB but failed to upload to OneDrive.<br/>${uploadData.error || ""}`, confirmButtonColor: "#f59e0b" });
-    } else {
-      await Swal.fire({ icon: "success", title: "Indent Submitted & Saved", html: `Saved as: ${fileName}`, confirmButtonColor: "#f59e0b" });
+      onClose();
+    } catch(err) {
+      console.error(err);
+      await Swal.fire({ icon: "error", title: "Submission Failed", text: err.message || "Check console", confirmButtonColor: "#f43f5e" });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onClose();
-  } catch(err) {
-    console.error(err);
-    await Swal.fire({ icon: "error", title: "Submission Failed", text: err.message || "Check console", confirmButtonColor: "#f43f5e" });
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+  };
 
 
   /* ---------------- render ---------------- */
@@ -396,7 +533,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
 
       {/* body */}
       <main className="flex-1 overflow-auto p-4 space-y-4">
-        {/* ... your existing step UI unchanged ... */}
         {step === 1 && (
           <section className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Delivery Boys • {formatDate(selectedDate)}</h2>
@@ -653,44 +789,44 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
         )}
       </main>
 
-      {/* footer / actions */}
-      <footer className="p-3 bg-white">
-        <div className="flex gap-3">
-          <div className="flex-1">
-            {step > 1 ? (
-              <button type="button" onClick={prev} className="w-full h-12 flex items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg">
-                Previous
-              </button>
-            ) : (
-              <button type="button" onClick={() => onClose()} className="w-full h-12 flex items-center justify-center rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg">
-                Cancel
-              </button>
-            )}
-          </div>
+      {/* footer / navigation */}
+      <footer className="flex justify-between p-4 border-t bg-white">
+        <button
+          onClick={prev}
+          disabled={step === 1 || isSubmitting}
+          className={`px-4 py-2 rounded-md font-medium transition ${
+            step === 1 || isSubmitting
+              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+              : "bg-gray-300 text-gray-700 hover:bg-gray-400"
+          }`}
+        >
+          &larr; Back
+        </button>
 
-          <div className="flex-1">
-            {step < 4 ? (
-              <button type="button" onClick={next} className="w-full h-12 flex items-center justify-center rounded-md bg-amber-500 text-white hover:bg-amber-600 text-lg">
-                Next
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={submit}
-                disabled={isSubmitting}
-                className={`w-full h-12 flex items-center justify-center rounded-md bg-amber-600 text-white hover:bg-amber-700 text-lg ${isSubmitting ? "cursor-not-allowed opacity-70" : ""}`}
-              >
-                {isSubmitting ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                  </svg>
-                ) : (
-                  "Submit Indent"
-                )}
-              </button>
-            )}
+        <div className="flex items-center space-x-4">
+          <div className="text-sm font-semibold text-gray-800">
+            Total Indent: <span className="text-green-700">{grandTotal} L</span>
           </div>
+          {step < 4 ? (
+            <button
+              onClick={next}
+              className="px-4 py-2 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition"
+            >
+              Next &rarr;
+            </button>
+          ) : (
+            <button
+              onClick={submit}
+              disabled={isSubmitting}
+              className={`px-4 py-2 rounded-md font-medium transition ${
+                isSubmitting
+                  ? "bg-green-300 text-white cursor-wait"
+                  : "bg-green-600 text-white hover:bg-green-700"
+              }`}
+            >
+              {isSubmitting ? "Submitting..." : "Submit & Save"}
+            </button>
+          )}
         </div>
       </footer>
     </div>
