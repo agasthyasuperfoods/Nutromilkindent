@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Swal from "sweetalert2";
 import "sweetalert2/dist/sweetalert2.min.css";
+import jsPDF from "jspdf";
 
 /**
  * Indent component (4-step workflow)
@@ -20,15 +21,16 @@ function PlaceholderLogo({ className = "w-6 h-6 text-gray-400" }) {
     </svg>
   );
 }
+
 export default function Indent({ selectedDate = new Date(), onClose = () => {} }) {
   const [step, setStep] = useState(1);
   const [deliveryBoys, setDeliveryBoys] = useState([]);
   const [bulkCustomers, setBulkCustomers] = useState([]);
-  // Junnu list entries: each row: { id, assignedType: 'delivery'|'bulk'|'', assignedId: '', assignedName:'', qty: '0' }
   const [junnuList, setJunnuList] = useState([{ id: Date.now(), assignedType: "", assignedId: "", assignedName: "", qty: "0" }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingDelivery, setLoadingDelivery] = useState(true);
   const [loadingBulk, setLoadingBulk] = useState(true);
+
   /* ---------------- fallback data ---------------- */
   const fallbackDelivery = [
     { id: 1, name: "Raj Kumar", area: "Area A", mobile: "9000000001", milkQuantity: "33", image: null },
@@ -39,6 +41,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     { id: 101, name: "Hotel Grand", area: "Market Road", totalMilk: "120", month_year: null, image: null },
     { id: 102, name: "Restaurant Spice", area: "Station St", totalMilk: "85", month_year: null, image: null },
   ];
+
   /* ---------------- fetch delivery boys ---------------- */
   useEffect(() => {
     let mounted = true;
@@ -73,13 +76,12 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     return () => (mounted = false);
   }, []);
 
-  /* ---------------- fetch bulk customers (joined with monthly indents via your API) ---------------- */
+  /* ---------------- fetch bulk customers ---------------- */
   useEffect(() => {
     let mounted = true;
     (async function loadBulk() {
       setLoadingBulk(true);
       try {
-        // safe date -> YYYY-MM-DD
         const d = new Date(selectedDate);
         const dateParam = d.toISOString().slice(0, 10);
         const res = await fetch(`/api/bulk-customers?date=${encodeURIComponent(dateParam)}`);
@@ -88,7 +90,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
         const rows = Array.isArray(data) ? data : data?.rows ?? data?.data ?? [];
         if (!Array.isArray(rows) || rows.length === 0) throw new Error("no rows");
 
-        // pick weekday / weekend quantities if your API returned monthly values
         const dayIndex = new Date(selectedDate).getDay();
         const mapped = rows.map((r) => {
           const qWeek = r.quantity_weekdays ?? r.default_quantity_weekdays ?? r.quantity ?? 0;
@@ -135,7 +136,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
 
   const removeJunnuRow = (id) => setJunnuList((p) => p.filter((r) => r.id !== id));
 
-  // when user selects an assignee, we store assignedType ('delivery'|'bulk'), assignedId and assignedName
   const updateJunnuAssignee = (rowId, assignedType, assignedId) => {
     if (!assignedType) {
       setJunnuList((p) => p.map((r) => (r.id === rowId ? { ...r, assignedType: "", assignedId: "", assignedName: "" } : r)));
@@ -153,7 +153,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
   };
 
   const updateJunnuQty = (rowId, qty) => {
-    // sanitize to numeric-string
     const sanitized = qty === "" ? "" : String(qty);
     setJunnuList((p) => p.map((r) => (r.id === rowId ? { ...r, qty: sanitized } : r)));
   };
@@ -164,85 +163,209 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
   const totalJunnu = junnuList.reduce((s, j) => s + Number(j.qty || 0), 0);
   const grandTotal = totalDelivery + totalBulk + totalJunnu;
 
-  /* ---------------- navigation & submit ---------------- */
+  /* ---------------- navigation & helpers ---------------- */
   const next = () => setStep((s) => Math.min(4, s + 1));
   const prev = () => setStep((s) => Math.max(1, s - 1));
   const formatDate = (d) =>
     new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
-  // 🔴 FINAL SUBMIT FUNCTION TO SEND DATA TO THE NEW API
-const submit = async () => {
-  setIsSubmitting(true); // show loader
-  const deliveryEntries = deliveryBoys
-    .filter(d => Number(d.milkQuantity) > 0)
-    .map(d => ({
-      date: selectedDate.toISOString().slice(0, 10),
-      delivery_boy_id: String(d.id),
-      company_id: null,
-      company_name: d.name,
-      quantity: Number(d.milkQuantity),
-      item_type: "REGULAR_MILK",
-    }));
+  /* ---------------- PDF generator (client-side) ----------------
+     Returns: base64 string (no data: prefix)
+  */
+  const generatePdfBase64 = () => {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const margin = 40;
+    const pageHeight = 792; // approx points for A4
+    let y = margin;
 
-  const bulkEntries = bulkCustomers
-    .filter(c => Number(c.totalMilk) > 0)
-    .map(c => ({
-      date: selectedDate.toISOString().slice(0, 10),
-      delivery_boy_id: null,
-      company_id: String(c.id),
-      company_name: c.name,
-      quantity: Number(c.totalMilk),
-      item_type: "REGULAR_MILK",
-    }));
+    doc.setFontSize(16);
+    doc.text(`Indent • ${formatDate(selectedDate)}`, margin, y);
+    y += 22;
 
-  const junnuEntries = junnuList
-    .filter(j => Number(j.qty) > 0 && j.assignedType)
-    .map(j => {
-      const isDelivery = j.assignedType === "delivery";
-      return {
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+    y += 18;
+
+    // Delivery section
+    doc.setFontSize(13);
+    doc.text("Delivery", margin, y);
+    y += 16;
+    doc.setFontSize(11);
+    if (deliveryBoys.length === 0) {
+      doc.text("—", margin + 8, y);
+      y += 14;
+    } else {
+      deliveryBoys.forEach((d) => {
+        doc.text(`${d.name} ${d.area ? `(${d.area})` : ""} — ${Number(d.milkQuantity || 0)} L`, margin + 8, y);
+        y += 14;
+        if (y > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      });
+    }
+    y += 8;
+    doc.text(`Total Delivery: ${totalDelivery} L`, margin + 8, y);
+    y += 18;
+
+    // Bulk section
+    doc.setFontSize(13);
+    doc.text("Bulk", margin, y);
+    y += 16;
+    doc.setFontSize(11);
+    if (bulkCustomers.length === 0) {
+      doc.text("—", margin + 8, y);
+      y += 14;
+    } else {
+      bulkCustomers.forEach((c) => {
+        doc.text(`${c.name} ${c.area ? `(${c.area})` : ""} — ${Number(c.totalMilk || 0)} L`, margin + 8, y);
+        y += 14;
+        if (y > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      });
+    }
+    y += 8;
+    doc.text(`Total Bulk: ${totalBulk} L`, margin + 8, y);
+    y += 18;
+
+    // Junnu section
+    doc.setFontSize(13);
+    doc.text("Junnu Assignment", margin, y);
+    y += 16;
+    doc.setFontSize(11);
+    junnuList.forEach((j) => {
+      if (j.assignedType && j.assignedName && Number(j.qty) > 0) {
+        doc.text(`${j.assignedName} (${j.assignedType}) — ${Number(j.qty)} L`, margin + 8, y);
+        y += 14;
+        if (y > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      }
+    });
+    y += 8;
+    doc.text(`Total Junnu: ${totalJunnu} L`, margin + 8, y);
+    y += 18;
+
+    doc.setFontSize(13);
+    doc.text(`Grand Total: ${grandTotal} L`, margin, y);
+
+    // return base64 without data: prefix
+    const dataUri = doc.output("datauristring");
+    const commaIndex = dataUri.indexOf(",");
+    return dataUri.slice(commaIndex + 1);
+  };
+
+  // ---------------- FINAL SUBMIT -> send indent, create pdf, upload to OneDrive ----------------
+  const submit = async () => {
+  setIsSubmitting(true);
+
+  try {
+    // 1) Build payload for your existing /api/indents
+    const deliveryEntries = deliveryBoys
+      .filter(d => Number(d.milkQuantity) > 0)
+      .map(d => ({
         date: selectedDate.toISOString().slice(0, 10),
-        delivery_boy_id: isDelivery ? String(j.assignedId) : null,
-        company_id: isDelivery ? null : String(j.assignedId),
+        delivery_boy_id: String(d.id),
+        company_id: null,
+        company_name: d.name,
+        quantity: Number(d.milkQuantity),
+        item_type: "REGULAR_MILK",
+      }));
+
+    const bulkEntries = bulkCustomers
+      .filter(c => Number(c.totalMilk) > 0)
+      .map(c => ({
+        date: selectedDate.toISOString().slice(0, 10),
+        delivery_boy_id: null,
+        company_id: String(c.id),
+        company_name: c.name,
+        quantity: Number(c.totalMilk),
+        item_type: "REGULAR_MILK",
+      }));
+
+    const junnuEntries = junnuList
+      .filter(j => Number(j.qty) > 0 && j.assignedType)
+      .map(j => ({
+        date: selectedDate.toISOString().slice(0, 10),
+        delivery_boy_id: j.assignedType === "delivery" ? String(j.assignedId) : null,
+        company_id: j.assignedType === "bulk" ? String(j.assignedId) : null,
         company_name: j.assignedName,
         quantity: Number(j.qty),
         item_type: "JUNNU_MILK",
-      };
-    });
+      }));
 
-  const payload = [...deliveryEntries, ...bulkEntries, ...junnuEntries];
+    const payload = [...deliveryEntries, ...bulkEntries, ...junnuEntries];
 
-  try {
+    // 2) Send to your existing API
     const res = await fetch("/api/indents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Submission failed");
 
-    await Swal.fire({
-      icon: "success",
-      title: "Indent Submitted!",
-      html: `<strong>Grand Total:</strong> ${data.grandTotal || 0} L`,
-      confirmButtonColor: "#f59e0b",
+    // 3) Generate PDF (base64)
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const margin = 40;
+    let y = margin;
+
+    doc.setFontSize(16);
+    doc.text(`Indent • ${new Date(selectedDate).toLocaleDateString()}`, margin, y);
+    y += 22;
+    doc.setFontSize(11);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+    y += 18;
+
+    const addSection = (title, items, total, key) => {
+      doc.setFontSize(13); doc.text(title, margin, y); y += 16;
+      doc.setFontSize(11);
+      items.forEach(i => {
+        doc.text(`${i.name} — ${Number(i[key] || 0)} L`, margin + 8, y); y += 14;
+      });
+      doc.text(`Total ${title}: ${total} L`, margin + 8, y); y += 18;
+    };
+
+    addSection("Delivery", deliveryBoys, deliveryBoys.reduce((s, d) => s + Number(d.milkQuantity || 0), 0), "milkQuantity");
+    addSection("Bulk", bulkCustomers, bulkCustomers.reduce((s, c) => s + Number(c.totalMilk || 0), 0), "totalMilk");
+    addSection("Junnu", junnuList.filter(j => j.assignedType && Number(j.qty) > 0).map(j => ({ name: j.assignedName, qty: j.qty })), junnuList.reduce((s, j) => s + Number(j.qty || 0), 0), "qty");
+
+    doc.setFontSize(13);
+    doc.text(`Grand Total: ${deliveryEntries.length + bulkEntries.length + junnuEntries.length}`, margin, y);
+
+    const dataUri = doc.output("datauristring");
+    const base64 = dataUri.split(",")[1];
+
+    // 4) Upload to OneDrive
+    const fileName = `Indent_${selectedDate.toISOString().slice(0,10)}_${Date.now()}.pdf`;
+    const folderPath = process.env.NEXT_PUBLIC_ONEDRIVE_FOLDER || "";
+
+    const uploadResp = await fetch("/api/upload-to-onedrive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName, fileContent: base64, folderPath }),
     });
+
+    const uploadData = await uploadResp.json();
+
+    if (!uploadResp.ok) {
+      console.warn("OneDrive upload failed:", uploadData);
+      await Swal.fire({ icon: "warning", title: "Submitted — Upload failed", html: `Saved to DB but failed to upload to OneDrive.<br/>${uploadData.error || ""}`, confirmButtonColor: "#f59e0b" });
+    } else {
+      await Swal.fire({ icon: "success", title: "Indent Submitted & Saved", html: `Saved as: ${fileName}`, confirmButtonColor: "#f59e0b" });
+    }
 
     onClose();
-  } catch (err) {
-    console.error("Submit failed:", err);
-    Swal.fire({
-      icon: "error",
-      title: "Submission Failed",
-      text: err.message || "Check console for details",
-      confirmButtonColor: "#f43f5e",
-    });
+  } catch(err) {
+    console.error(err);
+    await Swal.fire({ icon: "error", title: "Submission Failed", text: err.message || "Check console", confirmButtonColor: "#f43f5e" });
   } finally {
-    setIsSubmitting(false); // hide loader
+    setIsSubmitting(false);
   }
 };
-
-
 
 
   /* ---------------- render ---------------- */
@@ -273,7 +396,7 @@ const submit = async () => {
 
       {/* body */}
       <main className="flex-1 overflow-auto p-4 space-y-4">
-        {/* Step 1: Delivery */}
+        {/* ... your existing step UI unchanged ... */}
         {step === 1 && (
           <section className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Delivery Boys • {formatDate(selectedDate)}</h2>
@@ -318,7 +441,6 @@ const submit = async () => {
           </section>
         )}
 
-        {/* Step 2: Bulk */}
         {step === 2 && (
           <section className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Bulk Customers • {formatDate(selectedDate)}</h2>
@@ -363,7 +485,6 @@ const submit = async () => {
           </section>
         )}
 
-        {/* Step 3: Junnu Assignment (Card Layout) */}
         {step === 3 && (
           <section className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Junnu Milk Assignment</h2>
@@ -372,7 +493,6 @@ const submit = async () => {
             <div className="space-y-3">
               {junnuList.map((row) => (
                 <div key={row.id} className="bg-white rounded-lg border border-gray-200 p-3 flex items-center">
-                  {/* Left side: dropdown */}
                   <div className="flex-1 min-w-0 pr-4">
                     <label className="block text-xs text-gray-600 mb-1">Assign To</label>
                     <select
@@ -405,7 +525,6 @@ const submit = async () => {
                     </select>
                   </div>
 
-                  {/* Right side: qty + image */}
                   <div className="flex items-center gap-4">
                     <div className="w-28">
                       <label className="block text-xs text-gray-600 text-right">Qty (L)</label>
@@ -424,7 +543,6 @@ const submit = async () => {
                     </div>
                   </div>
 
-                  {/* Delete button (optional) */}
                   <button
                     type="button"
                     onClick={() => removeJunnuRow(row.id)}
@@ -438,11 +556,7 @@ const submit = async () => {
             </div>
 
             <div className="flex justify-between items-center mt-3">
-              <button
-                type="button"
-                onClick={addJunnuRow}
-                className="px-3 py-2 bg-amber-100 text-amber-700 rounded-md text-sm hover:bg-amber-200"
-              >
+              <button type="button" onClick={addJunnuRow} className="px-3 py-2 bg-amber-100 text-amber-700 rounded-md text-sm hover:bg-amber-200">
                 + Add Another
               </button>
               <div className="text-sm text-gray-700">
@@ -452,13 +566,11 @@ const submit = async () => {
           </section>
         )}
 
-
-        {/* Step 4: Review (restored earlier UI you liked) */}
         {step === 4 && (
           <section className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Review • {formatDate(selectedDate)}</h2>
 
-            {/* Delivery Summary */}
+            {/* Summaries - unchanged */}
             <div className="bg-white rounded-lg border border-gray-200 p-3 space-y-3">
               <div className="font-medium text-gray-700">Delivery Summary</div>
               <div className="space-y-2">
@@ -483,7 +595,6 @@ const submit = async () => {
               </div>
             </div>
 
-            {/* Bulk Summary */}
             <div className="bg-white rounded-lg border border-gray-200 p-3 space-y-3">
               <div className="font-medium text-gray-700">Bulk Summary</div>
               <div className="space-y-2">
@@ -508,7 +619,6 @@ const submit = async () => {
               </div>
             </div>
 
-            {/* Junnu Assignment summary */}
             <div className="bg-white rounded-lg border border-gray-200 p-3 space-y-3">
               <div className="font-medium text-gray-700">Junnu Assignment</div>
               <div className="space-y-1">
@@ -532,7 +642,6 @@ const submit = async () => {
               </div>
             </div>
 
-            {/* Grand total */}
             <div className="bg-white rounded-lg border border-gray-200 p-3">
               <div className="flex items-center justify-between">
                 <div className="font-bold text-gray-800">Grand Total</div>
@@ -549,19 +658,11 @@ const submit = async () => {
         <div className="flex gap-3">
           <div className="flex-1">
             {step > 1 ? (
-              <button
-                type="button"
-                onClick={prev}
-                className="w-full h-12 flex items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg"
-              >
+              <button type="button" onClick={prev} className="w-full h-12 flex items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg">
                 Previous
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => onClose()}
-                className="w-full h-12 flex items-center justify-center rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg"
-              >
+              <button type="button" onClick={() => onClose()} className="w-full h-12 flex items-center justify-center rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 text-lg">
                 Cancel
               </button>
             )}
@@ -569,31 +670,25 @@ const submit = async () => {
 
           <div className="flex-1">
             {step < 4 ? (
-              <button
-                type="button"
-                onClick={next}
-                className="w-full h-12 flex items-center justify-center rounded-md bg-amber-500 text-white hover:bg-amber-600 text-lg"
-              >
+              <button type="button" onClick={next} className="w-full h-12 flex items-center justify-center rounded-md bg-amber-500 text-white hover:bg-amber-600 text-lg">
                 Next
               </button>
             ) : (
-     <button
-  type="button"
-  onClick={submit}
-  disabled={isSubmitting} // prevent multiple clicks
-  className={`w-full h-12 flex items-center justify-center rounded-md bg-amber-600 text-white hover:bg-amber-700 text-lg ${
-    isSubmitting ? "cursor-not-allowed opacity-70" : ""
-  }`}
->
-  {isSubmitting ? (
-    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-    </svg>
-  ) : (
-    "Submit Indent"
-  )}
-</button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={isSubmitting}
+                className={`w-full h-12 flex items-center justify-center rounded-md bg-amber-600 text-white hover:bg-amber-700 text-lg ${isSubmitting ? "cursor-not-allowed opacity-70" : ""}`}
+              >
+                {isSubmitting ? (
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                  </svg>
+                ) : (
+                  "Submit Indent"
+                )}
+              </button>
             )}
           </div>
         </div>

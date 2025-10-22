@@ -1,0 +1,79 @@
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import fetch from "node-fetch";
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    const { fileName, fileContent, folderPath = "" } = req.body;
+
+    // If fileContent is not provided, generate a dynamic PDF
+    let finalFileContent;
+    let finalFileName = fileName || "test-indent.pdf";
+
+    if (!fileContent) {
+      // 1️⃣ Generate PDF dynamically
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([600, 400]);
+      const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const text = "NutroMilk Indent - Generated dynamically via API";
+      page.drawText(text, { x: 50, y: 350, size: 18, font, color: rgb(0, 0, 0) });
+      const pdfBytes = await pdfDoc.save();
+      finalFileContent = Buffer.from(pdfBytes);
+    } else {
+      finalFileContent = Buffer.from(fileContent, "base64");
+    }
+
+    const tenantId = process.env.AZURE_TENANT_ID;
+    const clientId = process.env.AZURE_CLIENT_ID;
+    const clientSecret = process.env.AZURE_CLIENT_SECRET;
+    const user = process.env.ONEDRIVE_USER;
+
+    if (!tenantId || !clientId || !clientSecret || !user) {
+      return res.status(500).json({ error: "Missing Azure credentials or OneDrive user" });
+    }
+
+    // 2️⃣ Get access token
+    const tokenResp = await fetch(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        scope: "https://graph.microsoft.com/.default",
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+      }),
+    });
+
+    if (!tokenResp.ok) throw new Error(await tokenResp.text());
+    const { access_token } = await tokenResp.json();
+
+    // 3️⃣ Build upload URL
+    const folder = process.env.ONEDRIVE_FOLDER || folderPath || "";
+    const encodedPath = folder
+      ? `${encodeURIComponent(folder)}/${encodeURIComponent(finalFileName)}`
+      : encodeURIComponent(finalFileName);
+
+    const uploadUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(user)}/drive/root:/${encodedPath}:/content`;
+
+    // 4️⃣ Upload
+    const uploadResp = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+        "Content-Type": "application/pdf",
+      },
+      body: finalFileContent,
+    });
+
+    if (!uploadResp.ok) throw new Error(await uploadResp.text());
+    const fileData = await uploadResp.json();
+
+    return res.status(200).json({ success: true, file: fileData });
+  } catch (err) {
+    console.error("Upload error:", err);
+    return res.status(500).json({ error: err.message });
+  }
+}
