@@ -1,14 +1,31 @@
 // pages/api/reports/customer-performance.js
 // Purpose: Ranks bulk customers by total volume, average daily indent, and frequency.
 
-import { db } from '../../../lib/db'; // Your actual DB client import
+import { Pool } from "pg";
+
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ message: 'Method Not Allowed' });
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+  
+  const { month, year } = req.query;
+
+  if (!month || !year) {
+    return res.status(400).json({ error: 'Missing required query parameters: month and year' });
   }
 
+  // Convert string query parameters to integers for database functions
+  const monthNum = parseInt(month, 10);
+  const yearNum = parseInt(year, 10);
+
+  let client;
   try {
+    client = await db.connect(); // Acquire client from pool
+
     const customerPerformanceQuery = `
       SELECT
           company_name,
@@ -18,28 +35,26 @@ export default async function handler(req, res) {
       FROM
           public.indents
       WHERE
-          company_id IS NOT NULL -- CRUCIAL: Excludes delivery boy entries
+          EXTRACT(MONTH FROM indent_date) = $1
+          AND EXTRACT(YEAR FROM indent_date) = $2
+          AND company_id IS NOT NULL -- CRUCIAL: Excludes delivery boy entries
       GROUP BY
           company_name
       ORDER BY
           total_quantity_for_month DESC;
     `;
     
-    // In production, run: const result = await db.query(customerPerformanceQuery);
-    // Mock Data for demonstration:
-    const mockData = { rows: [
-      { company_name: 'Delhi Mithai', total_quantity_for_month: '5640.00', average_daily_indent: '188.00', days_indented: 30 },
-      { company_name: 'Dazn Company', total_quantity_for_month: '3490.00', average_daily_indent: '116.33', days_indented: 30 },
-      { company_name: 'Pragathinagar', total_quantity_for_month: '2690.00', average_daily_indent: '89.67', days_indented: 30 },
-      { company_name: 'Daspala', total_quantity_for_month: '2610.00', average_daily_indent: '87.00', days_indented: 30 },
-      { company_name: 'Pappusetu', total_quantity_for_month: '1660.00', average_daily_indent: '55.33', days_indented: 30 },
-      { company_name: 'Phoenix', total_quantity_for_month: '880.00', average_daily_indent: '29.33', days_indented: 30 },
-      { company_name: 'Zee School', total_quantity_for_month: '173.00', average_daily_indent: '21.62', days_indented: 8 },
-      { company_name: 'Navanami', total_quantity_for_month: '121.00', average_daily_indent: '4.03', days_indented: 30 },
-    ]};
+    const params = [monthNum, yearNum];
 
-    res.status(200).json(mockData.rows); 
+    const result = await client.query(customerPerformanceQuery, params);
+
+    return res.status(200).json(result.rows); 
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching customer performance data' });
+    console.error("Database Error in customer-performance.js:", error);
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  } finally {
+    if (client) {
+      client.release(); // IMPORTANT: Release client back to pool
+    }
   }
 }

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
 
 // === AMBER PALETTE COLORS (Maintained for Brand Consistency) ===
 const PRIMARY_ACCENT = '#d97706'; // Amber 600 (Primary/Bulk Milk)
@@ -31,100 +30,69 @@ const generateMonths = () => {
 const ALL_MONTHS = generateMonths();
 
 // ====================================================================
-// === API SIMULATION (Replaced with your actual API fetch calls) ===
+// === CORE API FETCH LOGIC ===
 // ====================================================================
 
-// SSR-Safe Mock Data for Initial October Load
-const INITIAL_DAILY_DATA = Array.from({ length: 30 }, (_, i) => ({
-  indent_date: `2025-10-${String(i + 1).padStart(2, '0')}`,
-  // Deterministic formula for SSR-safe mock charting
-  daily_total_quantity: (2510 + Math.sin(i * 0.5) * 500 + i * 2).toFixed(2), 
-}));
+/**
+ * Fetches all three reports concurrently from the dynamic APIs
+ * with exponential backoff for resilience.
+ */
+const fetchReports = async (month, year) => {
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
 
-const INITIAL_CUSTOMER_DATA = [
-  { company_name: "Delhi Mithai", total_quantity_for_month: '5640.00', average_daily_indent: '188.00', days_indented: 30 },
-  { company_name: "Dazn Company", total_quantity_for_month: '3490.00', average_daily_indent: '116.33', days_indented: 30 },
-  { company_name: "Pragathinagar", total_quantity_for_month: '2690.00', average_daily_indent: '89.67', days_indented: 30 },
-  { company_name: "Daspala", total_quantity_for_month: '2610.00', average_daily_indent: '87.00', days_indented: 30 },
-  { company_name: "Pappusetu", total_quantity_for_month: '1660.00', average_daily_indent: '55.33', days_indented: 30 },
-].sort((a, b) => parseFloat(b.total_quantity_for_month) - parseFloat(a.total_quantity_for_month));
+    const params = `month=${month}&year=${year}`;
+    const apiEndpoints = [
+        `/api/reports/daily-total?${params}`,
+        `/api/reports/monthly-sales?${params}`,
+        `/api/reports/customer-performance?${params}`
+    ];
 
-const INITIAL_MONTHLY_DATA = [
-  { sales_month: '2025-10-01T00:00:00.000Z', total_monthly_volume: '75000.00' }, // Current
-  { sales_month: '2025-09-01T00:00:00.000Z', total_monthly_volume: '70000.00' }, // Previous
-];
+    const fetchWithRetry = async (url, attempt = 1) => {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                // Throw an error with status for clearer logging
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        } catch (error) {
+            if (attempt < maxRetries) {
+                const delay = baseDelay * (2 ** (attempt - 1));
+                console.warn(`Fetch failed for ${url} (Attempt ${attempt}/${maxRetries}). Retrying in ${delay}ms...`);
+                // Wait for the calculated delay (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return fetchWithRetry(url, attempt + 1);
+            }
+            console.error(`Failed to fetch ${url} after ${maxRetries} attempts.`, error);
+            return []; // Return empty array on final failure
+        }
+    };
 
+    // Use Promise.all to fetch all data concurrently
+    const [dailyData, monthlyData, customerData] = await Promise.all([
+        fetchWithRetry(apiEndpoints[0]), // daily-total
+        fetchWithRetry(apiEndpoints[1]), // monthly-sales (fetches current and previous month)
+        fetchWithRetry(apiEndpoints[2]), // customer-performance
+    ]);
 
-// MOCK DATA STRUCTURE: Matches the APIs you defined.
-const MOCK_API_RESPONSE = {
-  // INITIAL MONTH: October 2025
-  '2025-10': { 
-    daily: INITIAL_DAILY_DATA,
-    monthly: INITIAL_MONTHLY_DATA,
-    customer: INITIAL_CUSTOMER_DATA,
-  },
-  // SEPTEMBER 2025: Using the data from your API mock files
-  '2025-09': { 
-    // Data for Daily Trend
-    daily: [
-      { indent_date: '2025-09-01T00:00:00.000Z', daily_total_quantity: '758.50' },
-      { indent_date: '2025-09-02T00:00:00.000Z', daily_total_quantity: '782.50' },
-      { indent_date: '2025-09-03T00:00:00.000Z', daily_total_quantity: '778.50' },
-      { indent_date: '2025-09-04T00:00:00.000Z', daily_total_quantity: '788.50' },
-      { indent_date: '2025-09-05T00:00:00.000Z', daily_total_quantity: '775.50' },
-    ],
-    // Data for Monthly Sales (current and previous)
-    monthly: [
-      { sales_month: '2025-09-01T00:00:00.000Z', total_monthly_volume: '13885.00' }, 
-      { sales_month: '2025-08-01T00:00:00.000Z', total_monthly_volume: '11500.00' }, 
-    ],
-    // Data for Customer Performance
-    customer: [
-      { company_name: 'Delhi Mithai', total_quantity_for_month: '5640.00', average_daily_indent: '188.00', days_indented: 30 },
-      { company_name: 'Dazn Company', total_quantity_for_month: '3490.00', average_daily_indent: '116.33', days_indented: 30 },
-      { company_name: 'Pragathinagar', total_quantity_for_month: '2690.00', average_daily_indent: '89.67', days_indented: 30 },
-      { company_name: 'Daspala', total_quantity_for_month: '2610.00', average_daily_indent: '87.00', days_indented: 30 },
-      { company_name: 'Pappusetu', total_quantity_for_month: '1660.00', average_daily_indent: '55.33', days_indented: 30 },
-    ].sort((a, b) => parseFloat(b.total_quantity_for_month) - parseFloat(a.total_quantity_for_month)),
-  },
-  // EMPTY MONTH: Example for "No data found"
-  '2025-01': { 
-    daily: [],
-    monthly: [],
-    customer: [],
-  }
-};
-
-const simulateFetchReports = (month) => {
-  // In a real application, you would replace this with actual fetch calls:
-  // const dailyPromise = fetch(`/api/reports/daily-total?month=${month}`).then(res => res.json());
-  // const monthlyPromise = fetch(`/api/reports/monthly-sales?month=${month}`).then(res => res.json());
-  // const customerPromise = fetch(`/api/reports/customer-performance?month=${month}`).then(res => res.json());
-  
-  const data = MOCK_API_RESPONSE[month] || { daily: [], monthly: [], customer: [] };
-
-  return new Promise(resolve => {
-    // Simulate network delay and API merging
-    setTimeout(() => {
-        resolve({
-            daily: data.daily,
-            monthly: data.monthly,
-            customer: data.customer
-        });
-    }, 200);
-  });
+    return {
+        daily: dailyData || [],
+        monthly: monthlyData || [],
+        customer: customerData || []
+    };
 };
 
 // ====================================================================
-// === COMPONENT STYLES AND SUB-COMPONENTS (Unchanged) ===
+// === COMPONENT STYLES AND SUB-COMPONENTS ===
 // ====================================================================
+
 const styles = {
-  // ... (Styles object is kept the same for brevity but is included in the final output)
   container: { 
     padding: '8px',
     marginTop:'5rem',
     marginBottom:'5rem',
-    fontFamily: 'Arial, sans-serif', 
+    fontFamily: 'Inter, Arial, sans-serif', 
     backgroundColor: BASE_BG 
   },
   header: { 
@@ -198,6 +166,8 @@ const styles = {
   volumeIcon: {
     marginRight: '10px',
     objectFit: 'contain',
+    width: '20px', // Explicit size for standard <img> tag
+    height: '20px', // Explicit size for standard <img> tag
   }
 };
 
@@ -210,6 +180,7 @@ const DailyVolumeAreaChart = ({ dailyData }) => {
   const maxVolume = Math.max(...volumes) * 1.05 || 1; 
   const CHART_HEIGHT = 100;
   const daysInMonth = dailyData.length;
+  // Use a sensible scaling factor based on the number of points actually plotted
   const dayCountForScaling = Math.max(daysInMonth - 1, 1);
   
   const points = dailyData.map((d, index) => {
@@ -217,7 +188,7 @@ const DailyVolumeAreaChart = ({ dailyData }) => {
     const y = CHART_HEIGHT - (volume / maxVolume) * CHART_HEIGHT; 
     const x = (index / dayCountForScaling) * 100; 
     return `${x} ${y}`;
-  }).join(' L ');
+  }).join(' L '); // ' L ' denotes a line segment in SVG path
 
   const areaPath = `M 0 ${CHART_HEIGHT} L ${points} L 100 ${CHART_HEIGHT} Z`;
   const linePath = `M ${points}`;
@@ -260,6 +231,8 @@ const DailyVolumeAreaChart = ({ dailyData }) => {
         {dailyData.map((d, index) => {
           const day = new Date(d.indent_date).toLocaleDateString('en-US', { day: 'numeric' });
           const leftPercent = (index / dayCountForScaling) * 100;
+          
+          // Show labels only for start, end, and 10th/20th day for clarity
           const shouldShowLabel = index === 0 || day === '10' || day === '20' || index === daysInMonth - 1; 
           
           return (
@@ -291,26 +264,26 @@ const DailyVolumeAreaChart = ({ dailyData }) => {
 
 
 const MilkProductSplit = ({ monthlyData }) => {
-    // We assume the first entry of monthlyData has the total volume
+    // We assume the first entry of monthlyData has the total volume for the current month
     const totalVolumeString = monthlyData?.[0]?.total_monthly_volume;
     const totalVolume = parseFloat(totalVolumeString) || 0;
     
-    if (totalVolume === 0) {
-        return <p style={{ textAlign: 'center', color: NO_DATA_TEXT_COLOR, fontSize: '0.8em', padding: '10px 0' }}>🚨 Total volume data not available for split analysis.</p>;
-    }
-
-    // Since item_type split is not available in the monthly-sales API, we use an estimate for demo:
+    // Using 65/35 split as approximation since the API doesn't provide item_type split.
     const bulkVolume = (totalVolume * 0.65); 
     const deliveryVolume = (totalVolume * 0.35);
     
     const bulkPercent = (bulkVolume / totalVolume) * 100;
     const deliveryPercent = (deliveryVolume / totalVolume) * 100;
 
+    // These paths are included to fulfill the user's requirement to use their asset names
+    const MILK_CAN_URL = "/milkcans.png"; 
+    const MILK_PACKET_URL = "/milkpacket.png"; 
+
     return (
         <div style={{ marginTop: '10px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', fontWeight: 'bold', marginBottom: '4px' }}>
-                <span style={{ color: PRIMARY_ACCENT }}>Bulk ({bulkPercent.toFixed(1)}%)</span>
-                <span style={{ color: INFO_COLOR }}>Delivery ({deliveryPercent.toFixed(1)}%)</span>
+                <span style={{ color: PRIMARY_ACCENT }}>Bulk Customers ({bulkPercent.toFixed(1)}%)</span>
+                <span style={{ color: INFO_COLOR }}>Delivery Boys ({deliveryPercent.toFixed(1)}%)</span>
             </div>
 
             <div style={{ 
@@ -341,28 +314,26 @@ const MilkProductSplit = ({ monthlyData }) => {
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <Image 
-                        src="/milkcans.png" 
+                    {/* Using standard <img> tag for milkcans.png */}
+                    <img 
+                        src={MILK_CAN_URL} 
                         alt="Bulk Milk Cans" 
-                        width={20} 
-                        height={20} 
                         style={styles.volumeIcon} 
                     />
                     <div style={{ fontSize: '0.8em', color: PRIMARY_ACCENT, fontWeight: 'bold' }}>
-                        Bulk: {bulkVolume.toFixed(0)} L
+                        Bulk Customers: {bulkVolume.toFixed(0)} L
                     </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <Image 
-                        src="/milkpacket.png" 
+                    {/* Using standard <img> tag for milkpacket.png */}
+                    <img 
+                        src={MILK_PACKET_URL} 
                         alt="Delivery Milk Packets" 
-                        width={20} 
-                        height={20} 
                         style={styles.volumeIcon} 
                     />
                     <div style={{ fontSize: '0.8em', color: INFO_COLOR, fontWeight: 'bold' }}>
-                         Delivery: {deliveryVolume.toFixed(0)} L
+                         Delivery Boys: {deliveryVolume.toFixed(0)} L
                     </div>
                 </div>
             </div>
@@ -376,39 +347,46 @@ const MilkProductSplit = ({ monthlyData }) => {
 // ====================================================================
 
 function Reportsmain() {
-  // Use state for data and loading status
-  const [selectedMonth, setSelectedMonth] = useState(ALL_MONTHS[0].value);
-  const [dailyData, setDailyData] = useState(INITIAL_DAILY_DATA);
-  const [monthlyData, setMonthlyData] = useState(INITIAL_MONTHLY_DATA);
-  const [customerData, setCustomerData] = useState(INITIAL_CUSTOMER_DATA);
-  const [isLoading, setIsLoading] = useState(false);
+  // Get the most recent month for initial load
+  const initialMonth = ALL_MONTHS[0].value;
+  const [selectedMonth, setSelectedMonth] = useState(initialMonth);
+  
+  // Initialize state to empty arrays, relying entirely on fetch
+  const [dailyData, setDailyData] = useState([]);
+  const [monthlyData, setMonthlyData] = useState([]);
+  const [customerData, setCustomerData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true); // Start loading on mount
 
-  // useEffect hook to simulate API calls when month changes
+  // useEffect hook to fetch data on mount and whenever month changes
   useEffect(() => {
-    // Only run if the month is different from the initial SSR data month
-    if (selectedMonth !== ALL_MONTHS[0].value) {
-        setIsLoading(true);
-        // In a real app, replace simulateFetchReports with your actual API calls
-        simulateFetchReports(selectedMonth)
-            .then(data => {
-                setDailyData(data.daily);
-                setMonthlyData(data.monthly);
-                setCustomerData(data.customer);
-                setIsLoading(false);
-            })
-            .catch(error => {
-                console.error("Failed to fetch reports:", error);
-                // Clear data on error
-                setDailyData([]);
-                setMonthlyData([]);
-                setCustomerData([]);
-                setIsLoading(false);
-            });
-    }
-  }, [selectedMonth]);
+    const [year, month] = selectedMonth.split('-');
+    
+    // Set loading state
+    setIsLoading(true);
+    
+    // Fetch data using the dynamic APIs
+    fetchReports(month, year)
+        .then(data => {
+            setDailyData(data.daily);
+            // Sort monthly data so current month is always first (index 0)
+            setMonthlyData(data.monthly.sort((a, b) => new Date(b.sales_month) - new Date(a.sales_month)));
+            setCustomerData(data.customer);
+        })
+        .catch(error => {
+            // Clear data on failure
+            setDailyData([]);
+            setMonthlyData([]);
+            setCustomerData([]);
+        })
+        .finally(() => {
+            setIsLoading(false);
+        });
+  }, [selectedMonth]); // Dependency on selectedMonth
+
   
   // Helper function to render MoM Growth
   const renderMonthlySalesMetric = () => {
+    // monthlyData is sorted DESC by date, so index 0 is current month, 1 is previous
     const currentMonth = monthlyData?.[0];
     const previousMonth = monthlyData?.[1];
 
@@ -418,10 +396,13 @@ function Reportsmain() {
 
     let growthText = "N/A";
     let growthColor = DARK_TEXT;
-    const currentVolume = parseFloat(currentMonth.total_monthly_volume);
+    const currentVolume = parseFloat(currentMonth.total_monthly_volume) || 0;
+    
+    const monthLabel = new Date(currentMonth.sales_month).toLocaleString('en-US', { month: 'short', year: 'numeric' });
 
     if (previousMonth && previousMonth.total_monthly_volume) {
-      const previousVolume = parseFloat(previousMonth.total_monthly_volume);
+      const previousVolume = parseFloat(previousMonth.total_monthly_volume) || 0;
+      // Calculate MoM growth percentage
       const growth = previousVolume > 0 ? (((currentVolume - previousVolume) / previousVolume) * 100) : (currentVolume > 0 ? 100 : 0);
       
       growthText = `${growth > 0 ? '+' : ''}${growth.toFixed(1)}% MoM`;
@@ -432,10 +413,10 @@ function Reportsmain() {
       <div style={styles.metricBox}>
           <div>
               <div style={styles.metricValue}>
-                  {currentVolume.toLocaleString()} L
+                  {currentVolume.toLocaleString(undefined, { maximumFractionDigits: 2 })} L
               </div>
               <div style={styles.metricLabel}>
-                  Total Monthly Indent
+                  Total Monthly Indent ({monthLabel})
               </div>
           </div>
           <div style={{ fontSize: '1.1em', fontWeight: 'bold', color: growthColor }}>
@@ -447,19 +428,30 @@ function Reportsmain() {
 
   const renderContent = () => {
     if (isLoading) {
-        return <div style={{ textAlign: 'center', padding: '50px 0', color: DARK_TEXT }}>Loading Report Data... 🥛</div>;
+        return <div style={{ textAlign: 'center', padding: '50px 0', color: DARK_TEXT }}>
+          {/* Custom CSS for spin animation is added at the end of the return statement */}
+          <div style={{ 
+            fontSize: '2em', 
+            animation: 'spin 1s linear infinite',
+            display: 'inline-block' 
+          }}>🥛</div>
+          <p style={{ marginTop: '10px' }}>Fetching Real-time Report Data...</p>
+        </div>;
     }
+
+    // Check if we have total volume for the current month to decide on rendering the split
+    const currentMonthVolume = parseFloat(monthlyData?.[0]?.total_monthly_volume) || 0;
 
     return (
         <div style={styles.sectionContainer}>
         
             {/* 1. Top Customer Performance */}
             <div style={styles.card}>
-                <h2 style={{ color: DARK_TEXT, fontSize: '1.2em' }}>1. Top Customer Performance (Monthly)</h2>
-                <p style={{ color: '#6b7280', fontSize: '0.8em', marginBottom: '8px' }}>Customers ranked by **SUM(quantity)** for the month.</p>
+                <h2 style={{ color: DARK_TEXT, fontSize: '1.2em' }}>1. Top Bulk Customer Performance</h2>
+                <p style={{ color: '#6b7280', fontSize: '0.8em', marginBottom: '8px' }}>Customers ranked by quantity for the selected month.</p>
                 
                 {(customerData.length === 0) ? (
-                    <p style={{ textAlign: 'center', color: NO_DATA_TEXT_COLOR, fontSize: '0.8em', padding: '10px 0' }}>🚨 No customer indent data found for this month.</p>
+                    <p style={{ textAlign: 'center', color: NO_DATA_TEXT_COLOR, fontSize: '0.8em', padding: '10px 0' }}>🚨 No bulk customer indent data found for this month.</p>
                 ) : (
                     <table style={styles.table}>
                     <thead>
@@ -474,7 +466,7 @@ function Reportsmain() {
                         <tr key={index} style={{ 
                             backgroundColor: parseFloat(row.total_quantity_for_month) > 3000 ? ALT_ROW_BG : (index % 2 === 1 ? '#f9fafb' : CARD_BG) 
                         }}>
-                            <td style={styles.td}>**{row.company_name}**</td>
+                            <td style={styles.td}>{row.company_name}</td>
                             <td style={styles.td}>{parseFloat(row.total_quantity_for_month).toFixed(2)}</td>
                             <td style={styles.td}>{parseFloat(row.average_daily_indent).toFixed(2)}</td>
                         </tr>
@@ -486,21 +478,23 @@ function Reportsmain() {
             
             {/* 2. Daily Volume Trend (Smoothed Area Chart) */}
             <div style={styles.card}>
-                <h2 style={{ color: DARK_TEXT, fontSize: '1.2em', marginBottom: '10px' }}>2. Daily Volume Trend (Liters)</h2>
+                <h2 style={{ color: DARK_TEXT, fontSize: '1.2em', marginBottom: '10px' }}>2. Daily Indent Volume Trend (Liters)</h2>
                 <DailyVolumeAreaChart dailyData={dailyData} />
-                <p style={{ fontSize: '0.7em', color: '#6b7280', marginTop: '15px' }}>
-                    *Visualizes **SUM(quantity)** grouped by **indent_date**.*
-                </p>
+              
             </div>
             
-            {/* 3. Product Mix Report (Progress Bar) */}
+            {/* 3. Product Mix Report (Progress Bar) - CONDITIONAL RENDERING APPLIED HERE */}
             <div style={styles.card}>
                 <h2 style={{ color: DARK_TEXT, fontSize: '1.2em' }}>3. Milk Type Volume Split</h2>
-                <p style={{ color: '#6b7280', fontSize: '0.8em', marginBottom: '8px' }}>Categorization of total monthly volume for procurement planning.</p>
-                <MilkProductSplit monthlyData={monthlyData} />
-                <p style={{ fontSize: '0.7em', color: '#6b7280', marginTop: '15px' }}>
-                    *This requires **SUM(quantity)** filtered by **item_type** (not included in `monthly-sales.js` API).*
-                </p>
+                <p style={{ color: '#6b7280', fontSize: '0.8em', marginBottom: '8px' }}>Estimated breakdown of total monthly volume.</p>
+                
+                {currentMonthVolume > 0 ? (
+                    // Render split component only if volume is present
+                    <MilkProductSplit monthlyData={monthlyData} />
+                ) : (
+                    // Render no data message if volume is zero or missing
+                    <p style={{ textAlign: 'center', color: NO_DATA_TEXT_COLOR, fontSize: '0.8em', padding: '10px 0' }}>🚨 Estimated breakdown not available (No monthly volume data).</p>
+                )}
             </div>
         </div>
     );
@@ -508,7 +502,15 @@ function Reportsmain() {
 
   return (
     <div style={styles.container}>
-      <h1 style={styles.header}>Milk Indent Dashboard</h1>
+      {/* Add spin animation style for loading indicator */}
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      <h1 style={styles.header}>Milk Indent Reports Dashboard</h1>
       
 
       {/* === Month Selector === */}
@@ -516,6 +518,7 @@ function Reportsmain() {
         style={styles.selector} 
         value={selectedMonth} 
         onChange={(e) => setSelectedMonth(e.target.value)}
+        disabled={isLoading}
       >
         {ALL_MONTHS.map(m => (
           <option key={m.value} value={m.value}>{m.label}</option>
