@@ -434,7 +434,7 @@ function Reportsmain() {
             fontSize: '2em', 
             animation: 'spin 1s linear infinite',
             display: 'inline-block' 
-          }}>🥛</div>
+          }}></div>
           <p style={{ marginTop: '10px' }}>Fetching Real-time Report Data...</p>
         </div>;
     }
