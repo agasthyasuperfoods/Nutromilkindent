@@ -229,7 +229,7 @@ function Maindash() {
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6 max-w-6xl mx-auto font-sans w-full pb-24">
       {/* First Row - Date Picker and Action Buttons */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mt-12 mb-6 md:mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mt-16 mb-6 md:mb-8">
         
         {/* Date Picker Section */}
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm ">

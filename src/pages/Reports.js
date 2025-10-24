@@ -1,13 +1,13 @@
 import Footer from '@/components/Footer'
 import Header from '@/components/Header'
-import Reportsbody from '@/components/Reportsbody'
+import Reportsmain from '@/components/Reportsmain'
 import React from 'react'
 
 function Reports() {
   return (
     <div>
         <Header />
-        <Reportsbody />
+        <Reportsmain />
         <Footer />
       
     </div>
