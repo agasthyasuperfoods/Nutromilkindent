@@ -1,142 +1,274 @@
-// src/pages/Alogin.js
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Image from "next/image";
 import Swal from "sweetalert2";
 import { useRouter } from "next/router";
-
 // THEME — main color palette (amber)
 const PRIMARY_HEX = "#D97706"; // amber-600
 const BTN_SOLID = "bg-amber-600 hover:bg-amber-700";
 const RING_FOCUS =
   "focus:outline-none focus:ring-4 focus:ring-amber-400/30 focus:border-amber-600";
 const LINK_TEXT = "text-amber-600 hover:underline";
-
 function CheckIcon({ className = "h-5 w-5" }) {
   return (
     <svg
+
       className={className}
+
       viewBox="0 0 24 24"
+
       fill="none"
+
       stroke="currentColor"
+
       xmlns="http://www.w3.org/2000/svg"
+
       aria-hidden
+
     >
+
       <path strokeWidth="2" d="M5 13l4 4L19 7" />
+
     </svg>
+
   );
+
 }
 
+
+
 export default function Alogin() {
+
   const router = useRouter();
+
   const [identifier, setIdentifier] = useState("");
+
   const [password, setPassword] = useState("");
+
   const [showPwd, setShowPwd] = useState(false);
+
   const [remember, setRemember] = useState(true);
+
   const [loading, setLoading] = useState(false);
+
   const [success, setSuccess] = useState(false);
 
+
+
   useEffect(() => {
+
     if (router && router.prefetch) {
+
       router.prefetch("/Dashboard").catch(() => {});
+
     }
+
   }, [router]);
 
+
+
   const onSubmit = async (e) => {
+
     e?.preventDefault?.();
 
+
+
     const idTrim = identifier.trim();
+
     const pwdTrim = password.trim();
 
+
+
     if (!idTrim || !pwdTrim) {
+
       Swal.fire({
+
         icon: "warning",
+
         title: "Missing details",
+
         text: "Please enter your employee ID and password.",
+
         confirmButtonColor: PRIMARY_HEX,
+
       });
+
       return;
+
     }
+
+
 
     try {
+
       setLoading(true);
 
+
+
       const res = await fetch("/api/login", {
+
         method: "POST",
+
         headers: { "Content-Type": "application/json" },
+
         body: JSON.stringify({ identifier: idTrim, password: pwdTrim }),
+
       });
+
+
 
       const json = await res.json().catch(() => ({}));
+
       if (!res.ok) throw new Error(json?.error || "Login failed");
 
+
+
       const u = json?.user || null;
+
       if (!u || !u.id) throw new Error("Login failed");
 
+
+
       if (typeof window !== "undefined") {
+
         const store = remember ? localStorage : sessionStorage;
+
         store.setItem("auth", "1");
+
         const displayName =
+
           (u.profile && u.profile.full_name) ? u.profile.full_name : (u.email || "");
+
         if (displayName) store.setItem("name", displayName);
+
         if (u.email) store.setItem("email", u.email);
+
         const employeeId =
+
           (u.profile && u.profile.employee_id) ? u.profile.employee_id : u.id;
+
         if (employeeId) store.setItem("employeeid", employeeId);
+
         if (remember) localStorage.setItem("remember", "1");
+
         else localStorage.removeItem("remember");
 
+
+
         localStorage.removeItem("hr_auth");
+
         localStorage.removeItem("hr_role");
+
         localStorage.removeItem("hr_name");
+
         localStorage.removeItem("hr_email");
+
         localStorage.removeItem("hr_employeeid");
+
       }
 
+
+
       setSuccess(true);
+
       requestAnimationFrame(() => {
+
         router.replace("/Dashboard");
+
       });
+
     } catch (err) {
+
       Swal.fire({
+
         icon: "error",
+
         title: "Login failed",
+
         text: err.message || "Something went wrong",
+
         confirmButtonColor: PRIMARY_HEX,
+
       });
+
     } finally {
+
       setLoading(false);
+
     }
+
   };
 
+
+
   return (
+
     <>
+
       <Head>
+
         <title>Sign In • Agasthya NutroMilk</title>
+
         <meta name="robots" content="noindex" />
+
       </Head>
 
+
+
+      {/* CHANGED: main is now flex-col to push button to bottom */}
+
       <main className="min-h-screen bg-white flex flex-col">
+
+
+
+        {/* CHANGED: Form now wraps everything and is flex-col */}
+
         <form onSubmit={onSubmit} className="flex flex-col flex-grow">
+
+
+
+          {/* CHANGED: This div contains the image and inputs, and will grow */}
+
           <div className="w-full bg-white overflow-hidden flex-grow">
+
             <div className="w-full">
+
               <Image
+
                 src="/login.png" // This is your yellow pattern image
+
                 alt="Agasthya NutroMilk Banner"
+
                 width={448}
+
                 height={200}
+
                 className="w-full h-auto object-cover"
+
                 priority
+
               />
+
             </div>
 
+
+
+            {/* Form content (inputs only) */}
+
             <div className="p-8 space-y-4">
+
               <div>
+
                 <label className="block text-xs font-medium text-gray-600 mb-2">Employee ID</label>
+
                 <div className="relative">
+
                   <input
+
                     type="text"
+
                     autoComplete="username"
+
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     className={`block w-full rounded-md border border-gray-300 bg-white px-3 py-3 text-gray-900 placeholder:text-gray-400 ${RING_FOCUS}`}
@@ -152,13 +284,11 @@ export default function Alogin() {
                   </div>
                 </div>
               </div>
-
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-medium text-gray-600">Password</label>
                   <a href="/forgot-password" className={`text-xs ${LINK_TEXT}`}>Forgot?</a>
                 </div>
-
                 <div className="relative">
                   <input
                     type={showPwd ? "text" : "password"}
@@ -176,7 +306,6 @@ export default function Alogin() {
                       </span>
                     ) : null}
                   </div>
-
                   <button
                     type="button"
                     onClick={() => setShowPwd((v) => !v)}
@@ -196,7 +325,6 @@ export default function Alogin() {
                   </button>
                 </div>
               </div>
-
               <div className="flex items-center justify-between">
                 <label className="inline-flex items-center gap-2 text-sm text-gray-700 select-none">
                   <input
@@ -204,36 +332,31 @@ export default function Alogin() {
                     className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-600"
                     checked={remember}
                     onChange={(e) => setRemember(e.target.checked)}
+
                   />
                   <span className="text-sm text-gray-700">Remember me</span>
                 </label>
-
                 <p className="text-xs text-gray-500 text-center mt-1">
                   <a href="/Hlogin" className={LINK_TEXT}>Privacy Policy</a>.
                 </p>
               </div>
             </div>
           </div>
-          
-          {/* CHANGED: Wrapper div has vertical padding (pb-8 pt-4) but NO horizontal padding (px-8) */}
-          <div className="pb-8 pt-4">
-            <button
-              type="submit"
-              disabled={loading || success}
-              // CHANGED: Removed rounded-lg to make it edge-to-edge
-              className={`w-full inline-flex items-center justify-center ${BTN_SOLID} text-white font-medium py-3 text-lg ${loading || success ? "opacity-60 cursor-not-allowed" : ""}`}
-            >
-              {loading ? (
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-                </svg>
-              ) : null}
-              {loading ? "Signing in…" : "Login"}
-            </button>
-          </div>
+          {/* CHANGED: Button is now at the bottom of the flex-col form */}
+          <button
+            type="submit"
+            disabled={loading || success}
+            className={`w-full inline-flex items-center justify-center ${BTN_SOLID} text-white font-medium py-3 text-lg ${loading || success ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            {loading ? (
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+              </svg>
+            ) : null}
+            {loading ? "Signing in…" : "Login"}
+          </button>
         </form>
-
         {/* Success Overlay remains unchanged */}
         {success && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/90">
@@ -258,4 +381,5 @@ export default function Alogin() {
       </main>
     </>
   );
+
 }

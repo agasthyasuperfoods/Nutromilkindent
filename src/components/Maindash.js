@@ -1,14 +1,20 @@
 // src/components/Maindash.js
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Indent from './Indent';
 import Swal from 'sweetalert2';
 
 function Maindash() {
   const [deliveryBoysExpanded, setDeliveryBoysExpanded] = useState(false);
   const [bulkCustomersExpanded, setBulkCustomersExpanded] = useState(false);
-  const [showIndentModal, setShowIndentModal] = useState(false);
+  
+  // FIX: Re-adding the missing state declaration
+  const [showIndentModal, setShowIndentModal] = useState(false); 
+  
   const [loadingDownload, setLoadingDownload] = useState(false);
+  
+  // 1. NEW STATE: Track if indent already exists or has been submitted for the selected date
+  const [isIndentAlreadySubmitted, setIsIndentAlreadySubmitted] = useState(false);
   
   // Set default date to tomorrow
   const tomorrow = new Date();
@@ -18,6 +24,47 @@ function Maindash() {
   // Delivery & bulk state
   const [deliveryBoysData, setDeliveryBoysData] = useState([]);
   const [bulkCustomersData, setBulkCustomersData] = useState([]);
+
+  // Helper function to format date for API query
+  const formatQueryDate = (date) => date.toISOString().slice(0, 10);
+
+  // 2. NEW useEffect: Check the database for existing indent upon date change
+  useEffect(() => {
+    let mounted = true;
+    const qDate = formatQueryDate(selectedDate);
+
+    async function checkIndentStatus() {
+        try {
+            // This API endpoint must be implemented (e.g., /api/indent-exists.js)
+            const res = await fetch(`/api/indent-exists?date=${encodeURIComponent(qDate)}`);
+            if (!res.ok) throw new Error('Indent status check failed');
+            
+            const { exists } = await res.json();
+            
+            if (mounted) {
+                // If indent exists, disable the submit button
+                setIsIndentAlreadySubmitted(!!exists);
+            }
+        } catch (err) {
+            console.error('checkIndentStatus error:', err);
+            if (mounted) {
+                // Default to allowing submission on error to prevent being stuck
+                setIsIndentAlreadySubmitted(false);
+            }
+        }
+    }
+    
+    // Check if the current date is in the future (where indents are relevant)
+    if (selectedDate && new Date(selectedDate) >= new Date(new Date().setHours(0,0,0,0))) {
+        checkIndentStatus();
+    } else {
+        // Assume indents for past or current date are finalized/submitted
+        setIsIndentAlreadySubmitted(true); 
+    }
+
+    return () => { mounted = false; };
+  }, [selectedDate]); // Re-run when the selected date changes
+
 
   // Load delivery boys from API
   useEffect(() => {
@@ -59,7 +106,7 @@ function Maindash() {
     let mounted = true;
     (async function loadBulkCustomers() {
       try {
-        const qDate = selectedDate ? new Date(selectedDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0,10);
+        const qDate = selectedDate ? formatQueryDate(selectedDate) : new Date().toISOString().slice(0,10);
         const res = await fetch(`/api/bulk-customers?date=${encodeURIComponent(qDate)}`);
         if (!res.ok) throw new Error('bulk-customers fetch failed');
         const json = await res.json();
@@ -101,17 +148,30 @@ function Maindash() {
     });
   };
 
+  // NEW FUNCTION: Callback to be triggered by the Indent modal upon successful submission
+  const handleIndentSubmissionSuccess = useCallback(() => {
+    // 1. Close the modal
+    setShowIndentModal(false);
+    // 2. Disable future submissions for this date (updates button state)
+    setIsIndentAlreadySubmitted(true);
+    // 3. Show success alert
+    Swal.fire({
+      icon: 'success',
+      title: 'Indent Created!',
+      text: `The Indent for ${formatDisplayDate(selectedDate)} has been submitted successfully.`,
+      timer: 3000,
+      showConfirmButton: false
+    });
+  }, [selectedDate]);
+
   // Function to directly download the latest indent (NEW DB-DRIVEN LOGIC)
   const handleDownloadLatestIndent = async () => {
     setLoadingDownload(true);
     try {
-      // The error point where the component catches the API failure.
-      const dateParam = selectedDate.toISOString().slice(0, 10);
+      const dateParam = formatQueryDate(selectedDate);
       
-      // Call the single API route to query DB, generate PDF, and stream the file
       const downloadUrl = `/api/generate-and-download-indent?date=${dateParam}`;
       
-      // Show loading message
       Swal.fire({
         title: 'Preparing Indent...',
         text: 'Fetching data from database and generating PDF.',
@@ -121,13 +181,10 @@ function Maindash() {
         }
       });
 
-      // Use window navigation to trigger the API route and the download
       window.location.href = downloadUrl;
       
-      // Wait a moment for the download to start before closing the loading spinner
       await new Promise(resolve => setTimeout(resolve, 500)); 
       
-      // Close loading and show success
       Swal.close();
       await Swal.fire({ 
         icon: 'success', 
@@ -159,6 +216,15 @@ function Maindash() {
   const handleCloseModal = () => {
     setShowIndentModal(false);
   };
+  
+  // Determine if the Create button should be disabled
+  const isCreateButtonDisabled = isIndentAlreadySubmitted;
+  
+  // Tooltip message for the disabled button
+  const disabledMessage = isIndentAlreadySubmitted 
+    ? `An indent for ${formatDisplayDate(selectedDate)} has already been submitted.`
+    : 'Create Indent';
+
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6 max-w-6xl mx-auto font-sans w-full pb-24">
@@ -204,23 +270,36 @@ function Maindash() {
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
           <div className="flex flex-col gap-3">
+            {/* MODIFIED BUTTON: Disabled when indent is submitted */}
             <button 
               onClick={handleCreateIndent}
-              className="bg-amber-500 hover:bg-amber-600 text-white py-3 px-6 rounded-lg font-medium transition-all duration-200 hover:shadow-md"
+              disabled={isCreateButtonDisabled}
+              // Use a group for tooltip positioning
+              className={`group relative text-white py-3 px-6 rounded-lg font-medium transition-all duration-200 hover:shadow-md ${
+                isCreateButtonDisabled 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-amber-500 hover:bg-amber-600'
+              }`}
             >
               <span className="flex items-center justify-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                Create Indent
+                {isIndentAlreadySubmitted ? 'Indent Submitted' : 'Create Indent'}
               </span>
+              {/* Tooltip for disabled state */}
+              {isIndentAlreadySubmitted && (
+                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max p-2 text-xs text-white bg-gray-700 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                  {disabledMessage}
+                </span>
+              )}
             </button>
             
             {/* Direct Download Button */}
             <button 
               onClick={handleDownloadLatestIndent}
               disabled={loadingDownload}
-              className={`bg-amber-300 hover:bg-amber-300 text-white py-3 px-6 rounded-lg font-medium transition-all duration-200 hover:shadow-md flex items-center justify-center gap-2 ${
+              className={`bg-amber-300 hover:bg-amber-400 text-white py-3 px-6 rounded-lg font-medium transition-all duration-200 hover:shadow-md flex items-center justify-center gap-2 ${
                 loadingDownload ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             >
@@ -354,6 +433,7 @@ function Maindash() {
               <Indent 
                 selectedDate={selectedDate}
                 onClose={handleCloseModal}
+                onSubmissionSuccess={handleIndentSubmissionSuccess} // <-- NEW PROP
               />
             </div>
           </div>
