@@ -116,29 +116,21 @@ export default function Alogin() {
         <meta name="robots" content="noindex" />
       </Head>
 
-      {/* CHANGED: Background is now white and padding is removed */}
-      <main className="min-h-screen bg-white flex items-center justify-center">
+      <main className="min-h-screen bg-white flex flex-col">
+        <form onSubmit={onSubmit} className="flex flex-col flex-grow">
+          <div className="w-full bg-white overflow-hidden flex-grow">
+            <div className="w-full">
+              <Image
+                src="/login.png" // This is your yellow pattern image
+                alt="Agasthya NutroMilk Banner"
+                width={448}
+                height={200}
+                className="w-full h-auto object-cover"
+                priority
+              />
+            </div>
 
-        {/* CHANGED: Removed shadow and rounded corners to blend into the background */}
-        <div className="w-full max-w-md mx-auto bg-white overflow-hidden">
-          {/* NOTE: The design in your screenshot with the logo and curve is different.
-              This code uses a simple image header. You may need to add more HTML/CSS for that specific design. */}
-          <div className="w-full">
-            <Image
-              src="/login.png" // This is your yellow pattern image
-              alt="Agasthya NutroMilk Banner"
-              width={448}
-              height={200}
-              className="w-full h-auto object-cover"
-              priority
-            />
-          </div>
-
-          {/* Form content */}
-          <div className="p-8">
-        
-
-            <form onSubmit={onSubmit} className="space-y-4">
+            <div className="p-8 space-y-4">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-2">Employee ID</label>
                 <div className="relative">
@@ -220,24 +212,27 @@ export default function Alogin() {
                   <a href="/Hlogin" className={LINK_TEXT}>Privacy Policy</a>.
                 </p>
               </div>
-
-              {/* MOVED & CHANGED: The login button is now part of the form */}
-              <button
-                type="submit"
-                disabled={loading || success}
-                className={`w-full inline-flex items-center justify-center rounded-lg ${BTN_SOLID} text-white font-medium py-3 text-lg mt-6 ${loading || success ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                {loading ? (
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-                  </svg>
-                ) : null}
-                {loading ? "Signing in…" : "Login"}
-              </button>
-            </form>
+            </div>
           </div>
-        </div>
+          
+          {/* CHANGED: Wrapper div has vertical padding (pb-8 pt-4) but NO horizontal padding (px-8) */}
+          <div className="pb-8 pt-4">
+            <button
+              type="submit"
+              disabled={loading || success}
+              // CHANGED: Removed rounded-lg to make it edge-to-edge
+              className={`w-full inline-flex items-center justify-center ${BTN_SOLID} text-white font-medium py-3 text-lg ${loading || success ? "opacity-60 cursor-not-allowed" : ""}`}
+            >
+              {loading ? (
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                </svg>
+              ) : null}
+              {loading ? "Signing in…" : "Login"}
+            </button>
+          </div>
+        </form>
 
         {/* Success Overlay remains unchanged */}
         {success && (

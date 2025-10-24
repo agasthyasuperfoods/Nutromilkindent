@@ -1,12 +1,14 @@
 // src/components/Maindash.js
+
 import React, { useEffect, useMemo, useState } from 'react';
 import Indent from './Indent';
+import Swal from 'sweetalert2';
 
 function Maindash() {
-  // State for collapsible sections
   const [deliveryBoysExpanded, setDeliveryBoysExpanded] = useState(false);
   const [bulkCustomersExpanded, setBulkCustomersExpanded] = useState(false);
   const [showIndentModal, setShowIndentModal] = useState(false);
+  const [loadingDownload, setLoadingDownload] = useState(false);
   
   // Set default date to tomorrow
   const tomorrow = new Date();
@@ -17,7 +19,7 @@ function Maindash() {
   const [deliveryBoysData, setDeliveryBoysData] = useState([]);
   const [bulkCustomersData, setBulkCustomersData] = useState([]);
 
-  // load delivery boys from API
+  // Load delivery boys from API
   useEffect(() => {
     let mounted = true;
     (async function loadDeliveryBoys() {
@@ -30,11 +32,10 @@ function Maindash() {
           const mapped = rows.map((r) => ({
             id: r.employee_id ?? r.id ?? `d-${Math.random()}`,
             name: r.delivery_boy_name ?? r.name ?? 'Unnamed',
-            // keep original DB column value (delivery_area) in area
             area: r.delivery_area ?? r.area ?? '',
             milkQuantity: (r.default_quantity ? String(r.default_quantity) : '33') + 'L',
             mobile: r.mobile_number ?? r.mobile ?? '',
-            customArea: '', // for compatibility
+            customArea: '',
           }));
           setDeliveryBoysData(mapped);
           return;
@@ -42,22 +43,18 @@ function Maindash() {
       } catch (err) {
         console.error('loadDeliveryBoys error:', err);
       }
-      // fallback: seed some defaults if API fails
       if (mounted && deliveryBoysData.length === 0) {
         setDeliveryBoysData([
           { id: 1, name: 'Raj Kumar', area: 'Area A', milkQuantity: '50L', customArea: '' },
           { id: 2, name: 'Suresh Patel', area: 'Area B', milkQuantity: '35L', customArea: '' },
           { id: 3, name: 'Amit Sharma', area: 'Area C', milkQuantity: '42L', customArea: '' },
-          { id: 4, name: 'Vikram Singh', area: 'Area A', milkQuantity: '28L', customArea: '' },
         ]);
       }
     })();
-
     return () => (mounted = false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // load bulk customers for selected date
+  // Load bulk customers for selected date
   useEffect(() => {
     let mounted = true;
     (async function loadBulkCustomers() {
@@ -81,30 +78,17 @@ function Maindash() {
       } catch (err) {
         console.error('loadBulkCustomers error:', err);
       }
-      // fallback: minimal seed
       if (mounted && bulkCustomersData.length === 0) {
         setBulkCustomersData([
           { id: 1, name: 'Hotel Grand', area: 'Commercial', totalMilk: '120L' },
           { id: 2, name: 'Restaurant Spice', area: 'Commercial', totalMilk: '85L' },
-          { id: 3, name: 'Cafe Coffee', area: 'Commercial', totalMilk: '65L' },
         ]);
       }
     })();
-
     return () => (mounted = false);
   }, [selectedDate]);
 
-  // derive unique delivery_area values from deliveryBoysData (not used in read-only mode but kept for compatibility)
-  const deliveryAreaOptions = useMemo(() => {
-    const set = new Set();
-    deliveryBoysData.forEach((d) => {
-      if (d.area && d.area !== 'OTHER') set.add(d.area.trim());
-      if (d.customArea) set.add(d.customArea.trim());
-    });
-    return Array.from(set).filter(Boolean).sort();
-  }, [deliveryBoysData]);
-
-  // compute bulk customers count for header badge
+  // Compute bulk customers count for header badge
   const bulkCustomersCount = useMemo(() => bulkCustomersData.length, [bulkCustomersData]);
 
   // Format date for display
@@ -117,6 +101,57 @@ function Maindash() {
     });
   };
 
+  // Function to directly download the latest indent (NEW DB-DRIVEN LOGIC)
+  const handleDownloadLatestIndent = async () => {
+    setLoadingDownload(true);
+    try {
+      // The error point where the component catches the API failure.
+      const dateParam = selectedDate.toISOString().slice(0, 10);
+      
+      // Call the single API route to query DB, generate PDF, and stream the file
+      const downloadUrl = `/api/generate-and-download-indent?date=${dateParam}`;
+      
+      // Show loading message
+      Swal.fire({
+        title: 'Preparing Indent...',
+        text: 'Fetching data from database and generating PDF.',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+
+      // Use window navigation to trigger the API route and the download
+      window.location.href = downloadUrl;
+      
+      // Wait a moment for the download to start before closing the loading spinner
+      await new Promise(resolve => setTimeout(resolve, 500)); 
+      
+      // Close loading and show success
+      Swal.close();
+      await Swal.fire({ 
+        icon: 'success', 
+        title: 'Generation Complete', 
+        text: `Indent for ${formatDisplayDate(selectedDate)} is downloading.`,
+        timer: 3000,
+        showConfirmButton: false
+      });
+      
+    } catch (error) {
+      console.error('Download error:', error);
+      Swal.close();
+      await Swal.fire({ 
+        icon: 'error', 
+        title: 'Download Failed', 
+        text: error.message || 'PDF generation failed. Check the server logs for /api/generate-and-download-indent.',
+        confirmButtonColor: '#ef4444'
+      });
+    } finally {
+      setLoadingDownload(false);
+    }
+  };
+
+
   const handleCreateIndent = () => {
     setShowIndentModal(true);
   };
@@ -125,15 +160,10 @@ function Maindash() {
     setShowIndentModal(false);
   };
 
-  // update handlers left in place but not used in read-only mode
-  const updateDeliveryArea = () => {};
-  const updateDeliveryCustomArea = () => {};
-  const updateDeliveryQty = () => {};
-
   return (
-   <div className="flex-1 overflow-auto p-4 md:p-6 max-w-6xl mx-auto font-sans w-full pb-24">
+    <div className="flex-1 overflow-auto p-4 md:p-6 max-w-6xl mx-auto font-sans w-full pb-24">
       {/* First Row - Date Picker and Action Buttons */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 pt-16 md:pt-19 mb-6 md:mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 mt-12 mb-6 md:mb-8">
         
         {/* Date Picker Section */}
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm ">
@@ -185,13 +215,28 @@ function Maindash() {
                 Create Indent
               </span>
             </button>
-            <button className="bg-amber-50 hover:bg-amber-100 text-amber-700 py-3 px-6 rounded-lg font-medium transition-all duration-200 hover:shadow-md border border-amber-200">
-              <span className="flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Download Indent
-              </span>
+            
+            {/* Direct Download Button */}
+            <button 
+              onClick={handleDownloadLatestIndent}
+              disabled={loadingDownload}
+              className={`bg-amber-300 hover:bg-amber-300 text-white py-3 px-6 rounded-lg font-medium transition-all duration-200 hover:shadow-md flex items-center justify-center gap-2 ${
+                loadingDownload ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {loadingDownload ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Download Latest Indent
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -234,7 +279,6 @@ function Maindash() {
                   className="grid grid-cols-2 gap-2 md:gap-4 p-3 md:p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors duration-150 last:border-b-0 text-sm md:text-base items-center"
                 >
                   <span className="font-medium text-gray-900 truncate">{boy.name}</span>
-
                   <div className="text-right text-gray-700 truncate">
                     {boy.customArea ? boy.customArea : boy.area || '—'}
                   </div>
@@ -286,13 +330,12 @@ function Maindash() {
         </div>
       </div>
 
-      {/* Bottom Modal for Mobile */}
-{showIndentModal && (
-  <div className="fixed inset-0 flex items-end md:items-center justify-center z-50 bg-black/40">
-    <div className="bg-white rounded-t-none md:rounded-lg w-full md:max-w-4xl h-[90vh] md:max-h-[90vh] flex flex-col md:shadow-lg border-none outline-none">
-
+      {/* Indent Modal */}
+      {showIndentModal && (
+        <div className="fixed inset-0 flex items-end md:items-center justify-center z-50 bg-black/40">
+          <div className="bg-white rounded-t-none md:rounded-lg w-full md:max-w-4xl h-[90vh] md:max-h-[90vh] flex flex-col md:shadow-lg border-none outline-none">
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-4 md:p-6  bg-white">
+            <div className="flex justify-between items-center p-4 md:p-6 bg-white">
               <h2 className="text-xl font-semibold text-gray-800">
                 Create Indent - {formatDisplayDate(selectedDate)}
               </h2>
