@@ -1,18 +1,43 @@
-import React, { useState, useEffect } from 'react';
+// components/ReportsMain.jsx
+import React, { useEffect, useState } from 'react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+} from 'recharts';
 
-// === AMBER PALETTE COLORS (Maintained for Brand Consistency) ===
-const PRIMARY_ACCENT = '#d97706'; // Amber 600 (Primary/Bulk Milk)
-const SUCCESS_COLOR = '#059669';  // Emerald 600
-const DANGER_COLOR = '#dc2626';   // Red 600
-const INFO_COLOR = '#1d4ed8';     // Blue 700 (Delivery Milk)
-const BASE_BG = '#f8f9fa';        // Light Gray Background
-const CARD_BG = '#ffffff';        // White Card Background
-const DARK_TEXT = '#374151';      // Neutral 800 for high-contrast text
-const TABLE_HEAD_BG = '#fef3c7';  // Amber 100
-const ALT_ROW_BG = '#fffdf5';     // Amber 50 (Subtle row shade / Metric Box background)
+/* Palette & styles (kept consistent) */
+const PRIMARY_ACCENT = '#d97706';
+const SUCCESS_COLOR = '#059669';
+const DANGER_COLOR = '#dc2626';
+const INFO_COLOR = '#1d4ed8';
+const BASE_BG = '#f8f9fa';
+const CARD_BG = '#ffffff';
+const DARK_TEXT = '#374151';
+const TABLE_HEAD_BG = '#fef3c7';
+const ALT_ROW_BG = '#fffdf5';
 const NO_DATA_TEXT_COLOR = '#9ca3af';
 
-// Helper function to generate month/year options (Last 12 months)
+const styles = {
+  container: { padding: '8px', marginTop: '5rem', marginBottom: '5rem', fontFamily: 'Inter, Arial, sans-serif', backgroundColor: BASE_BG },
+  header: { color: DARK_TEXT, paddingBottom: '6px', fontSize: '1.4em' },
+  selector: { padding: '8px 12px', margin: '10px 0', border: `1px solid ${PRIMARY_ACCENT}`, borderRadius: '6px', backgroundColor: ALT_ROW_BG, color: DARK_TEXT, fontSize: '0.9em', width: '100%', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' },
+  card: { padding: '12px', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', backgroundColor: CARD_BG, marginTop: 12 },
+  metricBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', backgroundColor: ALT_ROW_BG, borderRadius: '4px', borderLeft: `5px solid ${PRIMARY_ACCENT}` },
+  metricValue: { fontSize: '1.3em', fontWeight: 'bold', color: PRIMARY_ACCENT },
+  metricLabel: { fontSize: '0.8em', color: '#6b7280' },
+  table: { width: '100%', borderCollapse: 'collapse', marginTop: '8px' },
+  th: { padding: '6px 4px', borderBottom: `2px solid ${PRIMARY_ACCENT}`, textAlign: 'left', backgroundColor: TABLE_HEAD_BG, fontSize: '0.75em', color: DARK_TEXT },
+  td: { padding: '6px 4px', borderBottom: '1px solid #f3f4f6', textAlign: 'left', fontSize: '0.8em', color: DARK_TEXT }
+};
+
+/* Helpers */
 const generateMonths = () => {
   const months = [];
   const now = new Date();
@@ -20,519 +45,301 @@ const generateMonths = () => {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
-    months.push({ 
-      value: `${year}-${month}`, 
-      label: d.toLocaleString('en-US', { year: 'numeric', month: 'long' }) 
-    });
+    months.push({ value: `${year}-${month}`, label: d.toLocaleString('en-US', { year: 'numeric', month: 'long' }) });
   }
   return months;
 };
 const ALL_MONTHS = generateMonths();
 
-// ====================================================================
-// === CORE API FETCH LOGIC ===
-// ====================================================================
-
-/**
- * Fetches all three reports concurrently from the dynamic APIs
- * with exponential backoff for resilience.
- */
-const fetchReports = async (month, year) => {
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 second
-
-    const params = `month=${month}&year=${year}`;
-    const apiEndpoints = [
-        `/api/reports/daily-total?${params}`,
-        `/api/reports/monthly-sales?${params}`,
-        `/api/reports/customer-performance?${params}`
-    ];
-
-    const fetchWithRetry = async (url, attempt = 1) => {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                // Throw an error with status for clearer logging
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        } catch (error) {
-            if (attempt < maxRetries) {
-                const delay = baseDelay * (2 ** (attempt - 1));
-                console.warn(`Fetch failed for ${url} (Attempt ${attempt}/${maxRetries}). Retrying in ${delay}ms...`);
-                // Wait for the calculated delay (exponential backoff)
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return fetchWithRetry(url, attempt + 1);
-            }
-            console.error(`Failed to fetch ${url} after ${maxRetries} attempts.`, error);
-            return []; // Return empty array on final failure
-        }
-    };
-
-    // Use Promise.all to fetch all data concurrently
-    const [dailyData, monthlyData, customerData] = await Promise.all([
-        fetchWithRetry(apiEndpoints[0]), // daily-total
-        fetchWithRetry(apiEndpoints[1]), // monthly-sales (fetches current and previous month)
-        fetchWithRetry(apiEndpoints[2]), // customer-performance
-    ]);
-
-    return {
-        daily: dailyData || [],
-        monthly: monthlyData || [],
-        customer: customerData || []
-    };
+const isValidNumber = (v, requirePositive = false) => {
+  if (v === null || typeof v === 'undefined') return false;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return false;
+  return requirePositive ? n > 0 : true;
 };
 
-// ====================================================================
-// === COMPONENT STYLES AND SUB-COMPONENTS ===
-// ====================================================================
-
-const styles = {
-  container: { 
-    padding: '8px',
-    marginTop:'5rem',
-    marginBottom:'5rem',
-    fontFamily: 'Inter, Arial, sans-serif', 
-    backgroundColor: BASE_BG 
-  },
-  header: { 
-    color: DARK_TEXT, 
-    paddingBottom: '6px', 
-    fontSize: '1.4em'
-  },
-  selector: {
-    padding: '8px 12px',
-    margin: '10px 0',
-    border: `1px solid ${PRIMARY_ACCENT}`,
-    borderRadius: '6px',
-    backgroundColor: ALT_ROW_BG,
-    color: DARK_TEXT,
-    fontSize: '0.9em',
-    width: '100%',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-  },
-  sectionContainer: { 
-    display: 'flex', 
-    flexDirection: 'column', 
-    gap: '15px',
-    marginTop: '15px' 
-  },
-  card: { 
-    padding: '12px',
-    border: '1px solid #e5e7eb',
-    borderRadius: '8px', 
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)', 
-    backgroundColor: CARD_BG 
-  },
-  table: { 
-    width: '100%', 
-    borderCollapse: 'collapse', 
-    marginTop: '8px' 
-  },
-  th: { 
-    padding: '6px 4px',
-    borderBottom: `2px solid ${PRIMARY_ACCENT}`, 
-    textAlign: 'left', 
-    backgroundColor: TABLE_HEAD_BG,
-    fontSize: '0.75em',
-    color: DARK_TEXT
-  },
-  td: { 
-    padding: '5px 4px',
-    borderBottom: '1px solid #f3f4f6',
-    textAlign: 'left',
-    fontSize: '0.8em',
-    color: DARK_TEXT,
-    wordBreak: 'break-word',
-  },
-  metricBox: { 
-    display: 'flex', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    padding: '12px', 
-    backgroundColor: ALT_ROW_BG,
-    borderRadius: '4px', 
-    borderLeft: `5px solid ${PRIMARY_ACCENT}`
-  },
-  metricValue: {
-    fontSize: '1.3em', 
-    fontWeight: 'bold',
-    color: PRIMARY_ACCENT
-  },
-  metricLabel: {
-    fontSize: '0.8em', 
-    color: '#6b7280'
-  },
-  volumeIcon: {
-    marginRight: '10px',
-    objectFit: 'contain',
-    width: '20px', // Explicit size for standard <img> tag
-    height: '20px', // Explicit size for standard <img> tag
+const toMonthLabel = (isoOrDateOrLabel) => {
+  try {
+    if (!isoOrDateOrLabel) return null;
+    if (typeof isoOrDateOrLabel === 'string' && /^\d{4}-\d{2}$/.test(isoOrDateOrLabel)) {
+      const [y, m] = isoOrDateOrLabel.split('-').map(Number);
+      const d = new Date(Date.UTC(y, m - 1, 1));
+      return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+    }
+    const d = new Date(isoOrDateOrLabel);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+  } catch (e) {
+    return null;
   }
 };
 
-const DailyVolumeAreaChart = ({ dailyData }) => {
-  if (!dailyData || dailyData.length === 0) {
-    return <p style={{ textAlign: 'center', color: NO_DATA_TEXT_COLOR, fontSize: '0.8em', padding: '20px 0' }}>🚨 No daily indent data available for this month.</p>;
-  }
-
-  const volumes = dailyData.map(d => parseFloat(d.daily_total_quantity));
-  const maxVolume = Math.max(...volumes) * 1.05 || 1; 
-  const CHART_HEIGHT = 100;
-  const daysInMonth = dailyData.length;
-  // Use a sensible scaling factor based on the number of points actually plotted
-  const dayCountForScaling = Math.max(daysInMonth - 1, 1);
-  
-  const points = dailyData.map((d, index) => {
-    const volume = parseFloat(d.daily_total_quantity);
-    const y = CHART_HEIGHT - (volume / maxVolume) * CHART_HEIGHT; 
-    const x = (index / dayCountForScaling) * 100; 
-    return `${x} ${y}`;
-  }).join(' L '); // ' L ' denotes a line segment in SVG path
-
-  const areaPath = `M 0 ${CHART_HEIGHT} L ${points} L 100 ${CHART_HEIGHT} Z`;
-  const linePath = `M ${points}`;
-
-  return (
-    <div style={{ position: 'relative', padding: '10px 0 30px 0', margin: '0 5px' }}>
-      <div style={{ 
-        position: 'absolute', 
-        top: '0px', 
-        left: '0px', 
-        fontSize: '0.65em', 
-        color: PRIMARY_ACCENT, 
-        zIndex: 1 
-      }}>
-        {maxVolume.toFixed(0)} L 
-      </div>
-      <div style={{ 
-        height: `${CHART_HEIGHT}px`,
-        position: 'relative',
-        borderLeft: `1px solid #ccc`, 
-        borderBottom: `1px solid #ccc`, 
-      }}>
-        <svg 
-          viewBox={`0 0 100 ${CHART_HEIGHT}`} 
-          preserveAspectRatio="none" 
-          style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}
-        >
-          <path 
-            d={areaPath} 
-            fill={PRIMARY_ACCENT} 
-            fillOpacity="0.3"
-          />
-          <path 
-            d={linePath} 
-            fill="none" 
-            stroke={PRIMARY_ACCENT} 
-            strokeWidth="2"
-          />
-        </svg>
-        {dailyData.map((d, index) => {
-          const day = new Date(d.indent_date).toLocaleDateString('en-US', { day: 'numeric' });
-          const leftPercent = (index / dayCountForScaling) * 100;
-          
-          // Show labels only for start, end, and 10th/20th day for clarity
-          const shouldShowLabel = index === 0 || day === '10' || day === '20' || index === daysInMonth - 1; 
-          
-          return (
-            shouldShowLabel && (
-                <span 
-                    key={index}
-                    style={{ 
-                        position: 'absolute', 
-                        bottom: '-25px', 
-                        left: `${leftPercent}%`,
-                        transform: 'translateX(-50%)',
-                        fontSize: '0.65em', 
-                        color: DARK_TEXT,
-                        zIndex: 15
-                    }}
-                >
-                    {day}
-                </span>
-            )
-          );
-        })}
-      </div>
-      <p style={{ fontSize: '0.6em', color: '#6b7280', textAlign: 'center', marginTop: '5px' }}>
-        Day of Month
-      </p>
-    </div>
-  );
+// Format a daily iso date to a compact X-axis label — e.g., 'Oct 05' or '05'
+const formatDayLabel = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  // Show day numeric and short month when month has few data points
+  return `${String(d.getUTCDate()).padStart(2, '0')} ${d.toLocaleString('en-US', { month: 'short' })}`;
 };
 
-
-const MilkProductSplit = ({ monthlyData }) => {
-    // We assume the first entry of monthlyData has the total volume for the current month
-    const totalVolumeString = monthlyData?.[0]?.total_monthly_volume;
-    const totalVolume = parseFloat(totalVolumeString) || 0;
-    
-    // Using 65/35 split as approximation since the API doesn't provide item_type split.
-    const bulkVolume = (totalVolume * 0.65); 
-    const deliveryVolume = (totalVolume * 0.35);
-    
-    const bulkPercent = (bulkVolume / totalVolume) * 100;
-    const deliveryPercent = (deliveryVolume / totalVolume) * 100;
-
-    // These paths are included to fulfill the user's requirement to use their asset names
-    const MILK_CAN_URL = "/milkcans.png"; 
-    const MILK_PACKET_URL = "/milkpacket.png"; 
-
-    return (
-        <div style={{ marginTop: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75em', fontWeight: 'bold', marginBottom: '4px' }}>
-                <span style={{ color: PRIMARY_ACCENT }}>Bulk Customers ({bulkPercent.toFixed(1)}%)</span>
-                <span style={{ color: INFO_COLOR }}>Delivery Boys ({deliveryPercent.toFixed(1)}%)</span>
-            </div>
-
-            <div style={{ 
-                height: '20px', 
-                borderRadius: '10px', 
-                backgroundColor: INFO_COLOR + '30',
-                overflow: 'hidden',
-                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
-            }}>
-                <div style={{
-                    width: `${bulkPercent}%`,
-                    height: '100%',
-                    backgroundColor: PRIMARY_ACCENT,
-                    transition: 'width 0.5s ease-out',
-                    borderRadius: '10px 0 0 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    paddingRight: bulkPercent > 10 ? '5px' : '0'
-                }}>
-                    {bulkPercent > 50 && (
-                        <span style={{ fontSize: '0.7em', color: CARD_BG, fontWeight: 'bold' }}>
-                            {bulkVolume.toFixed(0)} L
-                        </span>
-                    )}
-                </div>
-            </div>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                    {/* Using standard <img> tag for milkcans.png */}
-                    <img 
-                        src={MILK_CAN_URL} 
-                        alt="Bulk Milk Cans" 
-                        style={styles.volumeIcon} 
-                    />
-                    <div style={{ fontSize: '0.8em', color: PRIMARY_ACCENT, fontWeight: 'bold' }}>
-                        Bulk Customers: {bulkVolume.toFixed(0)} L
-                    </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                    {/* Using standard <img> tag for milkpacket.png */}
-                    <img 
-                        src={MILK_PACKET_URL} 
-                        alt="Delivery Milk Packets" 
-                        style={styles.volumeIcon} 
-                    />
-                    <div style={{ fontSize: '0.8em', color: INFO_COLOR, fontWeight: 'bold' }}>
-                         Delivery Boys: {deliveryVolume.toFixed(0)} L
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
+// Convert payload.daily into chart-friendly data; ensure every day of month can be shown if you want full x-axis - here we use only existing days.
+const prepareChartData = (daily = []) => {
+  // daily items expected: { indent_date: ISO, daily_total_quantity: number }
+  if (!Array.isArray(daily) || daily.length === 0) return [];
+  return daily.map(d => ({
+    date: d.indent_date ? (d.indent_date.slice(0, 10)) : null,
+    label: d.indent_date ? formatDayLabel(d.indent_date) : '',
+    value: isValidNumber(d.daily_total_quantity) ? Number(d.daily_total_quantity) : 0
+  }));
 };
 
-
-// ====================================================================
-// === MAIN COMPONENT ===
-// ====================================================================
-
-function Reportsmain() {
-  // Get the most recent month for initial load
+export default function ReportsMain() {
   const initialMonth = ALL_MONTHS[0].value;
   const [selectedMonth, setSelectedMonth] = useState(initialMonth);
-  
-  // Initialize state to empty arrays, relying entirely on fetch
-  const [dailyData, setDailyData] = useState([]);
-  const [monthlyData, setMonthlyData] = useState([]);
-  const [customerData, setCustomerData] = useState([]);
-  const [isLoading, setIsLoading] = useState(true); // Start loading on mount
+  const [payload, setPayload] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // useEffect hook to fetch data on mount and whenever month changes
   useEffect(() => {
     const [year, month] = selectedMonth.split('-');
-    
-    // Set loading state
+    const yearNum = Number(year);
+    const monthNum = Number(month);
     setIsLoading(true);
-    
-    // Fetch data using the dynamic APIs
-    fetchReports(month, year)
-        .then(data => {
-            setDailyData(data.daily);
-            // Sort monthly data so current month is always first (index 0)
-            setMonthlyData(data.monthly.sort((a, b) => new Date(b.sales_month) - new Date(a.sales_month)));
-            setCustomerData(data.customer);
-        })
-        .catch(error => {
-            // Clear data on failure
-            setDailyData([]);
-            setMonthlyData([]);
-            setCustomerData([]);
-        })
-        .finally(() => {
-            setIsLoading(false);
+    setError(null);
+    setPayload(null);
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/reports/monthly-sales?month=${monthNum}&year=${yearNum}`, { cache: 'no-store' });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`API ${res.status}: ${text}`);
+        }
+        const data = await res.json();
+        setPayload(data || null);
+      } catch (err) {
+        setError(err.message || 'Failed to fetch reports');
+        setPayload(null);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [selectedMonth]);
+
+  // Monthly rows normalization: prefer payload.monthly.selected_month, but fall back to monthly.rows
+  const getMonthlyRows = () => {
+    if (!payload || !payload.monthly) return [];
+    const m = payload.monthly;
+    if (m.selected_month_present && m.selected_month) {
+      const arr = [];
+      arr.push({
+        sales_month: m.selected_month.sales_month_iso || m.selected_month.sales_month || (m.selected_month.sales_month_label ? `${m.selected_month.sales_month_label}-01T00:00:00.000Z` : null),
+        total_monthly_volume: m.selected_month.total_monthly_volume,
+        row_count: m.selected_month.row_count || 0
+      });
+      if (m.previous_month) {
+        arr.push({
+          sales_month: m.previous_month.sales_month_iso || m.previous_month.sales_month || (m.previous_month.sales_month_label ? `${m.previous_month.sales_month_label}-01T00:00:00.000Z` : null),
+          total_monthly_volume: m.previous_month.total_monthly_volume,
+          row_count: m.previous_month.row_count || 0
         });
-  }, [selectedMonth]); // Dependency on selectedMonth
+      }
+      return arr;
+    }
+    if (Array.isArray(m.rows) && m.rows.length > 0) {
+      // try to find selected row
+      const wanted = selectedMonth;
+      const found = m.rows.find(r => (r.sales_month_label === wanted) || (r.sales_month && r.sales_month.startsWith(wanted)));
+      if (!found) return [];
+      const arr = [{
+        sales_month: found.sales_month_iso || found.sales_month || (found.sales_month_label ? `${found.sales_month_label}-01T00:00:00.000Z` : null),
+        total_monthly_volume: found.total_monthly_volume,
+        row_count: found.row_count || 0
+      }];
+      return arr;
+    }
+    return [];
+  };
 
-  
-  // Helper function to render MoM Growth
-  const renderMonthlySalesMetric = () => {
-    // monthlyData is sorted DESC by date, so index 0 is current month, 1 is previous
-    const currentMonth = monthlyData?.[0];
-    const previousMonth = monthlyData?.[1];
+  const monthlyRows = getMonthlyRows();
+  const currentMonthRow = monthlyRows.length > 0 ? monthlyRows[0] : null;
+  const previousMonthRow = monthlyRows.length > 1 ? monthlyRows[1] : null;
 
-    if (monthlyData.length === 0) {
-        return <div style={{...styles.metricBox, color: NO_DATA_TEXT_COLOR, justifyContent: 'center'}}>🚨 No total volume data available for this month.</div>;
+  // Top-level total_monthly_volume (API guarantees this field in your combined API)
+  const topTotal = payload && typeof payload.total_monthly_volume !== 'undefined' ? Number(payload.total_monthly_volume) : (currentMonthRow && isValidNumber(currentMonthRow.total_monthly_volume) ? Number(currentMonthRow.total_monthly_volume) : null);
+
+  const renderTopMetric = () => {
+    if (isLoading) {
+      return (
+        <div style={styles.metricBox}>
+          <div style={{ color: DARK_TEXT }}>Loading...</div>
+        </div>
+      );
     }
 
-    let growthText = "N/A";
-    let growthColor = DARK_TEXT;
-    const currentVolume = parseFloat(currentMonth.total_monthly_volume) || 0;
-    
-    const monthLabel = new Date(currentMonth.sales_month).toLocaleString('en-US', { month: 'short', year: 'numeric' });
+    if (!isValidNumber(topTotal, true)) {
+      return <div style={{ ...styles.metricBox, color: NO_DATA_TEXT_COLOR, justifyContent: 'center' }}>🚨 No total volume data available for this month.</div>;
+    }
 
-    if (previousMonth && previousMonth.total_monthly_volume) {
-      const previousVolume = parseFloat(previousMonth.total_monthly_volume) || 0;
-      // Calculate MoM growth percentage
-      const growth = previousVolume > 0 ? (((currentVolume - previousVolume) / previousVolume) * 100) : (currentVolume > 0 ? 100 : 0);
-      
+    const monthLabel = (currentMonthRow && currentMonthRow.sales_month) ? toMonthLabel(currentMonthRow.sales_month) : selectedMonth;
+    let growthText = 'N/A';
+    let growthColor = DARK_TEXT;
+    if (previousMonthRow && isValidNumber(previousMonthRow.total_monthly_volume, true)) {
+      const prevVol = Number(previousMonthRow.total_monthly_volume);
+      const growth = prevVol > 0 ? (((topTotal - prevVol) / prevVol) * 100) : (topTotal > 0 ? 100 : 0);
       growthText = `${growth > 0 ? '+' : ''}${growth.toFixed(1)}% MoM`;
       growthColor = growth >= 0 ? SUCCESS_COLOR : DANGER_COLOR;
     }
 
     return (
       <div style={styles.metricBox}>
-          <div>
-              <div style={styles.metricValue}>
-                  {currentVolume.toLocaleString(undefined, { maximumFractionDigits: 2 })} L
-              </div>
-              <div style={styles.metricLabel}>
-                  Total Monthly Indent ({monthLabel})
-              </div>
-          </div>
-          <div style={{ fontSize: '1.1em', fontWeight: 'bold', color: growthColor }}>
-              {growthText}
-          </div>
+        <div>
+          <div style={styles.metricValue}>{Number(topTotal).toLocaleString(undefined, { maximumFractionDigits: 2 })} L</div>
+          <div style={styles.metricLabel}>Total Monthly Sales ({monthLabel})</div>
+        </div>
+        <div style={{ fontSize: '1.1em', fontWeight: 'bold', color: growthColor }}>{growthText}</div>
       </div>
     );
   };
 
-  const renderContent = () => {
-    if (isLoading) {
-        return <div style={{ textAlign: 'center', padding: '50px 0', color: DARK_TEXT }}>
-          {/* Custom CSS for spin animation is added at the end of the return statement */}
-          <div style={{ 
-            fontSize: '2em', 
-            animation: 'spin 1s linear infinite',
-            display: 'inline-block' 
-          }}></div>
-          <p style={{ marginTop: '10px' }}>Fetching Real-time Report Data...</p>
-        </div>;
-    }
+  /* ---------- Chart preparation ---------- */
+  const chartData = prepareChartData(payload ? payload.daily : []);
 
-    // Check if we have total volume for the current month to decide on rendering the split
-    const currentMonthVolume = parseFloat(monthlyData?.[0]?.total_monthly_volume) || 0;
-
-    return (
-        <div style={styles.sectionContainer}>
-        
-            {/* 1. Top Customer Performance */}
-            <div style={styles.card}>
-                <h2 style={{ color: DARK_TEXT, fontSize: '1.2em' }}>1. Top Bulk Customer Performance</h2>
-                <p style={{ color: '#6b7280', fontSize: '0.8em', marginBottom: '8px' }}>Customers ranked by quantity for the selected month.</p>
-                
-                {(customerData.length === 0) ? (
-                    <p style={{ textAlign: 'center', color: NO_DATA_TEXT_COLOR, fontSize: '0.8em', padding: '10px 0' }}>🚨 No bulk customer indent data found for this month.</p>
-                ) : (
-                    <table style={styles.table}>
-                    <thead>
-                        <tr>
-                        <th style={styles.th}>Customer</th>
-                        <th style={styles.th}>Total (L)</th>
-                        <th style={styles.th}>Avg. Daily (L)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {customerData.map((row, index) => (
-                        <tr key={index} style={{ 
-                            backgroundColor: parseFloat(row.total_quantity_for_month) > 3000 ? ALT_ROW_BG : (index % 2 === 1 ? '#f9fafb' : CARD_BG) 
-                        }}>
-                            <td style={styles.td}>{row.company_name}</td>
-                            <td style={styles.td}>{parseFloat(row.total_quantity_for_month).toFixed(2)}</td>
-                            <td style={styles.td}>{parseFloat(row.average_daily_indent).toFixed(2)}</td>
-                        </tr>
-                        ))}
-                    </tbody>
-                    </table>
-                )}
-            </div>
-            
-            {/* 2. Daily Volume Trend (Smoothed Area Chart) */}
-            <div style={styles.card}>
-                <h2 style={{ color: DARK_TEXT, fontSize: '1.2em', marginBottom: '10px' }}>2. Daily Indent Volume Trend (Liters)</h2>
-                <DailyVolumeAreaChart dailyData={dailyData} />
-              
-            </div>
-            
-            {/* 3. Product Mix Report (Progress Bar) - CONDITIONAL RENDERING APPLIED HERE */}
-            <div style={styles.card}>
-                <h2 style={{ color: DARK_TEXT, fontSize: '1.2em' }}>3. Milk Type Volume Split</h2>
-                <p style={{ color: '#6b7280', fontSize: '0.8em', marginBottom: '8px' }}>Estimated breakdown of total monthly volume.</p>
-                
-                {currentMonthVolume > 0 ? (
-                    // Render split component only if volume is present
-                    <MilkProductSplit monthlyData={monthlyData} />
-                ) : (
-                    // Render no data message if volume is zero or missing
-                    <p style={{ textAlign: 'center', color: NO_DATA_TEXT_COLOR, fontSize: '0.8em', padding: '10px 0' }}>🚨 Estimated breakdown not available (No monthly volume data).</p>
-                )}
-            </div>
-        </div>
-    );
+  function prepareChartData(daily = []) {
+    if (!Array.isArray(daily) || daily.length === 0) return [];
+    // Sort by date ascending (safety) and map to { date, label, value }
+    const sorted = daily.slice().sort((a, b) => {
+      const da = new Date(a.indent_date);
+      const db = new Date(b.indent_date);
+      return da - db;
+    });
+    return sorted.map(d => {
+      const iso = d.indent_date ? d.indent_date.slice(0, 10) : null;
+      const label = iso ? (() => {
+        const dd = new Date(iso);
+        return `${String(dd.getUTCDate()).padStart(2, '0')} ${dd.toLocaleString('en-US', { month: 'short' })}`;
+      })() : '';
+      return {
+        date: iso,
+        label,
+        value: isValidNumber(d.daily_total_quantity) ? Number(d.daily_total_quantity) : 0
+      };
+    });
   }
+
+  const chartHasData = Array.isArray(chartData) && chartData.length > 0;
 
   return (
     <div style={styles.container}>
-      {/* Add spin animation style for loading indicator */}
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
-
+      <style>{`@keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }`}</style>
       <h1 style={styles.header}>Milk Indent Reports Dashboard</h1>
-      
 
-      {/* === Month Selector === */}
-      <select 
-        style={styles.selector} 
-        value={selectedMonth} 
-        onChange={(e) => setSelectedMonth(e.target.value)}
-        disabled={isLoading}
-      >
-        {ALL_MONTHS.map(m => (
-          <option key={m.value} value={m.value}>{m.label}</option>
-        ))}
+      <select style={styles.selector} value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} disabled={isLoading}>
+        {ALL_MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
       </select>
-      
-      {/* Monthly Sales Metric Card */}
-      <div style={{ marginTop: '15px', marginBottom: '15px' }}>
-        {renderMonthlySalesMetric()}
-      </div>
 
-      {renderContent()}
+      <div style={{ marginTop: '15px', marginBottom: '15px' }}>{renderTopMetric()}</div>
+
+      {error ? <div style={{ color: DANGER_COLOR }}>{error}</div> : null}
+
+    
+
+      {/* Customer performance */}
+      <div style={{ ...styles.card, marginTop: 12 }}>
+        <h2 style={{ color: DARK_TEXT, fontSize: '1.1em' }}>Top Bulk Customer Performance</h2>
+        {payload && Array.isArray(payload.customer) && payload.customer.length > 0 ? (
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Customer</th>
+                <th style={styles.th}>Total (L)</th>
+                <th style={styles.th}>Avg Daily (L)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payload.customer.map((c, i) => (
+                <tr key={i} style={{ backgroundColor: (c.total_quantity_for_month && Number(c.total_quantity_for_month) > 3000) ? ALT_ROW_BG : (i % 2 === 1 ? '#f9fafb' : CARD_BG) }}>
+                  <td style={styles.td}>{c.company_name || '—'}</td>
+                  <td style={styles.td}>{c.total_quantity_for_month != null ? Number(c.total_quantity_for_month).toFixed(2) : '—'}</td>
+                  <td style={styles.td}>{c.average_daily_indent != null ? Number(c.average_daily_indent).toFixed(2) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p style={{ color: NO_DATA_TEXT_COLOR }}>No bulk customer indent data found for this month.</p>
+        )}
+      </div>
+  {/* Delivery summary */}
+      <div style={styles.card}>
+        <h2 style={{ color: DARK_TEXT, fontSize: '1.1em' }}>Delivery Boys — Total Delivery Volume</h2>
+        <p style={{ color: '#6b7280', fontSize: '0.8em' }}>
+          Total delivery volume: {payload ? (payload.delivery?.total_delivery_volume ?? 0) : '—'} L
+        </p>
+
+        {payload && Array.isArray(payload.delivery?.rows) && payload.delivery.rows.length > 0 ? (
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Delivery Boy ID</th>
+                <th style={styles.th}>Total (L)</th>
+                <th style={styles.th}>Deliveries</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payload.delivery.rows.map((d, i) => (
+                <tr key={i} style={{ backgroundColor: (d.total_quantity_for_month && Number(d.total_quantity_for_month) > 3000) ? ALT_ROW_BG : (i % 2 === 1 ? '#f9fafb' : CARD_BG) }}>
+                  <td style={styles.td}>{d.delivery_boy_id ?? '—'}</td>
+                  <td style={styles.td}>{d.total_quantity_for_month != null ? Number(d.total_quantity_for_month).toFixed(2) : '—'}</td>
+                  <td style={styles.td}>{d.deliveries_count != null ? Number(d.deliveries_count) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p style={{ color: NO_DATA_TEXT_COLOR }}>No delivery records for this month.</p>
+        )}
+      </div>
+      {/* Daily trend - improved chart */}
+      <div style={{ ...styles.card, marginTop: 12 }}>
+        <h2 style={{ color: DARK_TEXT, fontSize: '1.1em' }}>Daily Indent Volume Trend</h2>
+
+        {isLoading ? (
+          <p style={{ color: DARK_TEXT }}>Loading chart...</p>
+        ) : !chartHasData ? (
+          <p style={{ color: NO_DATA_TEXT_COLOR }}>No daily data for this month.</p>
+        ) : (
+          <div style={{ width: '100%', height: 360 }}>
+            <ResponsiveContainer>
+              <AreaChart data={chartData} margin={{ top: 16, right: 24, left: 0, bottom: 16 }}>
+                <defs>
+                  <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={PRIMARY_ACCENT} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={PRIMARY_ACCENT} stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" tick={{ fill: DARK_TEXT, fontSize: 12 }} />
+                <YAxis tick={{ fill: DARK_TEXT, fontSize: 12 }} />
+                <Tooltip
+                  formatter={(value) => `${Number(value).toFixed(2)} L`}
+                  labelFormatter={(label) => `Date: ${label}`}
+                />
+                <Legend verticalAlign="top" height={24} />
+                <Area type="monotone" dataKey="value" name="Daily Total (L)" stroke={PRIMARY_ACCENT} fill="url(#areaGradient)" strokeWidth={2} />
+                <Line type="monotone" dataKey="value" stroke={INFO_COLOR} strokeWidth={2} dot={{ r: 2 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+            {/* Compact summary under chart */}
+            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', color: '#6b7280', fontSize: 13 }}>
+              <div>Days with data: {chartData.length}</div>
+              <div>Total (recomputed): {chartData.reduce((s, d) => s + (Number(d.value) || 0), 0).toFixed(2)} L</div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
-export default Reportsmain;
