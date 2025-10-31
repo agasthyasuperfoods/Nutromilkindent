@@ -1,21 +1,15 @@
-// pages/api/delivery-boys/[[...id]].js
 import { Pool } from "pg";
 
+// Use HR database
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  // ssl: { rejectUnauthorized: false } // enable if required by your host
+  connectionString: process.env.HR_DATABASE_URL || "postgresql://neondb_owner:npg_JpDouvKn7xW4@ep-ancient-resonance-a1bfgl00-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require",
+  ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : undefined,
 });
 
-/**
- * Parse numeric id from a variety of places:
- * - req.query.id may be undefined, ['3'] or '3' depending on route.
- * - req.body.employee_id may be present.
- */
 function parseIdFromReq(req) {
   const q = req.query?.id;
   if (Array.isArray(q)) {
     if (q.length === 0) return null;
-    // support URLs like /api/delivery-boys/3  => ['3']
     const n = Number(q[0]);
     if (Number.isFinite(n)) return n;
     return null;
@@ -24,7 +18,7 @@ function parseIdFromReq(req) {
     const n = Number(q);
     if (Number.isFinite(n)) return n;
   }
-  const bodyId = req.body?.employee_id;
+  const bodyId = req.body?.employee_id || req.body?.id;
   if (bodyId !== undefined && bodyId !== null && bodyId !== "") {
     const n = Number(bodyId);
     if (Number.isFinite(n)) return n;
@@ -38,26 +32,36 @@ export default async function handler(req, res) {
   try {
     const client = await pool.connect();
     try {
-      // GET /api/delivery-boys or GET /api/delivery-boys/:id (optional)
+      // GET /api/delivery-boys or GET /api/delivery-boys/:id
       if (method === "GET") {
-        // if id provided, return single row; else list
         const id = parseIdFromReq(req);
         if (id) {
           const qSingle = `
-            SELECT employee_id, delivery_boy_name, delivery_area, mobile_number
-            FROM public.delivery_boys
-            WHERE employee_id = $1
+            SELECT 
+              id, 
+              "Name" as name, 
+              "Designation" as designation, 
+              "Gross Salary" as gross_salary,
+              COALESCE(area, '') as area
+            FROM public."Milk_point_Employees"
+            WHERE id = $1 AND LOWER(COALESCE("Designation", '')) = 'delivery boy'
             LIMIT 1;
           `;
           const { rows } = await client.query(qSingle, [id]);
-          if (!rows || rows.length === 0) return res.status(404).json({ error: "Delivery partner not found" });
+          if (!rows || rows.length === 0) return res.status(404).json({ error: "Delivery boy not found" });
           return res.status(200).json({ row: rows[0] });
         }
 
         const q = `
-          SELECT employee_id, delivery_boy_name, delivery_area, mobile_number
-          FROM public.delivery_boys
-          ORDER BY delivery_boy_name ASC;
+          SELECT 
+            id, 
+            "Name" as name, 
+            "Designation" as designation, 
+            "Gross Salary" as gross_salary,
+            COALESCE(area, '') as area
+          FROM public."Milk_point_Employees"
+          WHERE LOWER(COALESCE("Designation", '')) = 'delivery boy'
+          ORDER BY "Name" ASC;
         `;
         const { rows } = await client.query(q);
         return res.status(200).json({ rows });
@@ -65,27 +69,28 @@ export default async function handler(req, res) {
 
       // POST /api/delivery-boys
       if (method === "POST") {
-        const { delivery_boy_name, delivery_area = null, mobile_number = null } = req.body ?? {};
+        const { name, gross_salary = 0, area = '' } = req.body ?? {};
 
-        if (!delivery_boy_name || !String(delivery_boy_name).trim()) {
-          return res.status(400).json({ error: "delivery_boy_name is required" });
+        if (!name || !String(name).trim()) {
+          return res.status(400).json({ error: "name is required" });
         }
 
         const sql = `
-          INSERT INTO public.delivery_boys
-            (delivery_boy_name, delivery_area, mobile_number)
-          VALUES ($1, $2, $3)
-          RETURNING *;
+          INSERT INTO public."Milk_point_Employees"
+            ("Name", "Designation", "Gross Salary", "Location", area)
+          VALUES ($1, 'Delivery Boy', $2, 'operations', $3)
+          RETURNING id, "Name" as name, "Designation" as designation, "Gross Salary" as gross_salary, COALESCE(area, '') as area;
         `;
 
         try {
           const { rows } = await client.query(sql, [
-            String(delivery_boy_name).trim(),
-            delivery_area ? String(delivery_area).trim() : null,
-            mobile_number ? String(mobile_number).trim() : null,
+            String(name).trim(),
+            Number(gross_salary) || 0,
+            String(area || '').trim(),
           ]);
           return res.status(201).json({ row: rows[0] });
         } catch (err) {
+          console.error("POST /api/delivery-boys error:", err);
           if (err && err.code === "23505") {
             return res.status(409).json({ error: "Duplicate key — conflict", detail: err.detail ?? null });
           }
@@ -93,36 +98,37 @@ export default async function handler(req, res) {
         }
       }
 
-      // PUT /api/delivery-boys/:id  OR PUT /api/delivery-boys with body.employee_id
+      // PUT /api/delivery-boys/:id
       if (method === "PUT") {
         const id = parseIdFromReq(req);
-        if (!id) return res.status(400).json({ error: "employee_id (numeric) is required" });
+        if (!id) return res.status(400).json({ error: "id (numeric) is required" });
 
-        const { delivery_boy_name, delivery_area = null, mobile_number = null } = req.body ?? {};
+        const { name, gross_salary, area } = req.body ?? {};
 
-        if (!delivery_boy_name || !String(delivery_boy_name).trim()) {
-          return res.status(400).json({ error: "delivery_boy_name is required" });
+        if (!name || !String(name).trim()) {
+          return res.status(400).json({ error: "name is required" });
         }
 
         const sql = `
-          UPDATE public.delivery_boys
-          SET delivery_boy_name = $1,
-              delivery_area = $2,
-              mobile_number = $3
-          WHERE employee_id = $4
-          RETURNING *;
+          UPDATE public."Milk_point_Employees"
+          SET "Name" = $1,
+              "Gross Salary" = $2,
+              area = $3
+          WHERE id = $4 AND LOWER(COALESCE("Designation", '')) = 'delivery boy'
+          RETURNING id, "Name" as name, "Designation" as designation, "Gross Salary" as gross_salary, COALESCE(area, '') as area;
         `;
 
         try {
           const { rows } = await client.query(sql, [
-            String(delivery_boy_name).trim(),
-            delivery_area ? String(delivery_area).trim() : null,
-            mobile_number ? String(mobile_number).trim() : null,
+            String(name).trim(),
+            Number(gross_salary) || 0,
+            String(area || '').trim(),
             id,
           ]);
-          if (!rows || rows.length === 0) return res.status(404).json({ error: "Delivery partner not found" });
+          if (!rows || rows.length === 0) return res.status(404).json({ error: "Delivery boy not found" });
           return res.status(200).json({ row: rows[0] });
         } catch (err) {
+          console.error("PUT /api/delivery-boys error:", err);
           if (err && err.code === "23505") {
             return res.status(409).json({ error: "Duplicate key — conflict", detail: err.detail ?? null });
           }
@@ -130,18 +136,21 @@ export default async function handler(req, res) {
         }
       }
 
-      // DELETE /api/delivery-boys/:id  OR DELETE with body.employee_id
+      // DELETE /api/delivery-boys/:id
       if (method === "DELETE") {
         const id = parseIdFromReq(req);
-        if (!id) return res.status(400).json({ error: "employee_id (numeric) is required" });
+        if (!id) return res.status(400).json({ error: "id (numeric) is required" });
 
-        const sql = `DELETE FROM public.delivery_boys WHERE employee_id = $1 RETURNING *;`;
+        const sql = `
+          DELETE FROM public."Milk_point_Employees" 
+          WHERE id = $1 AND LOWER(COALESCE("Designation", '')) = 'delivery boy'
+          RETURNING *;
+        `;
         const { rows } = await client.query(sql, [id]);
-        if (!rows || rows.length === 0) return res.status(404).json({ error: "Delivery partner not found" });
+        if (!rows || rows.length === 0) return res.status(404).json({ error: "Delivery boy not found" });
         return res.status(200).json({ row: rows[0] });
       }
 
-      // method not allowed
       res.setHeader("Allow", "GET, POST, PUT, DELETE");
       return res.status(405).json({ error: "Method not allowed" });
     } finally {
@@ -149,6 +158,6 @@ export default async function handler(req, res) {
     }
   } catch (err) {
     console.error("delivery-boys api error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: "Internal server error", detail: err.message });
   }
 }

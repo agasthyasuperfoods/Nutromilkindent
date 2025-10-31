@@ -118,17 +118,20 @@ export default function DeliveryPartner() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
-    employee_id: "",
-    delivery_boy_name: "",
-    mobile_number: "",
-    delivery_area: "",
+    id: "",
+    name: "",
+    gross_salary: 0,
+    area: "",
   });
 
+  // Extract unique route areas from routes
   const routeAreas = useMemo(() => {
     const map = new Map();
     routes.forEach((r) => {
       const area = String(r.route_area || "").trim();
-      if (area && !map.has(area.toLowerCase())) map.set(area.toLowerCase(), area);
+      if (area && !map.has(area.toLowerCase())) {
+        map.set(area.toLowerCase(), area);
+      }
     });
     return Array.from(map.values()).sort();
   }, [routes]);
@@ -137,19 +140,22 @@ export default function DeliveryPartner() {
     (async () => {
       setLoading(true);
       try {
-        const [db, rt] = await Promise.all([
-          fetch("/api/delivery-boys"),
-          fetch("/api/routes"),
-        ]);
-        if (db.ok) setPartners((await db.json()).rows ?? []);
-        if (rt.ok) setRoutes((await rt.json()).rows ?? []);
-      } catch (e) {}
+        // Fetch delivery boys from HR database
+        const dbRes = await fetch("/api/delivery-boys");
+        if (dbRes.ok) setPartners((await dbRes.json()).rows ?? []);
+
+        // Fetch routes from OLD database
+        const routesRes = await fetch("/api/routes");
+        if (routesRes.ok) setRoutes((await routesRes.json()).rows ?? []);
+      } catch (e) {
+        console.error("Error loading data:", e);
+      }
       setLoading(false);
     })();
   }, []);
 
   const validateForm = () => {
-    if (!form.delivery_boy_name.trim()) {
+    if (!form.name.trim()) {
       MySwal.fire({
         icon: "warning",
         title: "Missing Name",
@@ -158,29 +164,15 @@ export default function DeliveryPartner() {
       });
       return false;
     }
-    if (!/^[0-9]{10}$/.test(form.mobile_number.trim())) {
-      MySwal.fire({
-        icon: "warning",
-        title: "Invalid Mobile",
-        text: "Please enter a valid 10-digit mobile number.",
-        confirmButtonColor: SUCCESS_YELLOW,
-      });
-      return false;
-    }
     return true;
   };
 
   const openAdd = async () => {
-    let nextId = "";
-    try {
-      const res = await fetch("/api/delivery-boys?next=1");
-      if (res.ok) nextId = (await res.json())?.next_id ?? "";
-    } catch (_) {}
     setForm({
-      employee_id: nextId,
-      delivery_boy_name: "",
-      mobile_number: "",
-      delivery_area: routeAreas[0] ?? "",
+      id: "",
+      name: "",
+      gross_salary: 0,
+      area: routeAreas[0] ?? "",
     });
     setShowAdd(true);
   };
@@ -229,7 +221,7 @@ export default function DeliveryPartner() {
     if (!validateForm()) return;
     setEditing(true);
     try {
-      const res = await fetch(`/api/delivery-boys?id=${form.employee_id}`, {
+      const res = await fetch(`/api/delivery-boys/${form.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -263,7 +255,7 @@ export default function DeliveryPartner() {
     setShowEdit(false);
   };
 
-  const deletePartner = async (employee_id) => {
+  const deletePartner = async (id) => {
     const ok = await MySwal.fire({
       title: "Delete delivery partner?",
       text: "This action cannot be undone.",
@@ -275,7 +267,7 @@ export default function DeliveryPartner() {
     if (!ok.isConfirmed) return;
 
     try {
-      const res = await fetch(`/api/delivery-boys?id=${employee_id}`, { method: "DELETE" });
+      const res = await fetch(`/api/delivery-boys/${id}`, { method: "DELETE" });
       if (res.ok) {
         MySwal.fire({
           icon: "success",
@@ -322,15 +314,18 @@ export default function DeliveryPartner() {
               ) : (
                 <div style={styles.list}>
                   {partners.map((p) => (
-                    <div key={p.employee_id} style={styles.item}>
+                    <div key={p.id} style={styles.item}>
                       <div style={styles.left}>
-                        <div style={styles.title}    onClick={() => {
+                        <div 
+                          style={styles.title}
+                          onClick={() => {
                             setForm(p);
                             setShowEdit(true);
-                          }}> 
-                          {p.delivery_boy_name} <span style={{ color: "#94A3B8" }}>#{p.employee_id}</span>
+                          }}
+                        > 
+                          {p.name} <span style={{ color: "#94A3B8" }}>#{p.id}</span>
                         </div>
-                        <div style={styles.metaRow}>{p.mobile_number} • {p.delivery_area}</div>
+                        <div style={styles.metaRow}>Area: {p.area || 'Not assigned'}</div>
                       </div>
                       <div style={styles.actions}>
                         <button
@@ -338,13 +333,13 @@ export default function DeliveryPartner() {
                             setForm(p);
                             setShowEdit(true);
                           }}
-                          style={{ background: "none", border: "none" }}
+                          style={{ background: "none", border: "none", cursor: "pointer" }}
                         >
                           <Edit3 size={16} />
                         </button>
                         <button
-                          onClick={() => deletePartner(p.employee_id)}
-                          style={{ background: "none", border: "none" }}
+                          onClick={() => deletePartner(p.id)}
+                          style={{ background: "none", border: "none", cursor: "pointer" }}
                         >
                           <Trash2 size={16} color="#ef4444" />
                         </button>
@@ -367,25 +362,18 @@ export default function DeliveryPartner() {
               <input
                 style={styles.input}
                 placeholder="Name"
-                value={form.delivery_boy_name}
-                onChange={(e) => setForm({ ...form, delivery_boy_name: e.target.value })}
-                required
-              />
-              <input
-                style={styles.input}
-                placeholder="Mobile number (10 digits)"
-                value={form.mobile_number.replace(/\D/g, "").slice(0, 10)}
-                onChange={(e) => setForm({ ...form, mobile_number: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
               />
               <select
                 style={styles.input}
-                value={form.delivery_area}
-                onChange={(e) => setForm({ ...form, delivery_area: e.target.value })}
+                value={form.area}
+                onChange={(e) => setForm({ ...form, area: e.target.value })}
               >
                 <option value="">Select Area</option>
-                {routeAreas.map((a) => (
-                  <option key={a} value={a}>{a}</option>
+                {routeAreas.map((area) => (
+                  <option key={area} value={area}>{area}</option>
                 ))}
               </select>
               <div style={{ display: "flex", gap: 8 }}>
@@ -414,25 +402,18 @@ export default function DeliveryPartner() {
               <input
                 style={styles.input}
                 placeholder="Name"
-                value={form.delivery_boy_name}
-                onChange={(e) => setForm({ ...form, delivery_boy_name: e.target.value })}
-                required
-              />
-              <input
-                style={styles.input}
-                placeholder="Mobile number (10 digits)"
-                value={form.mobile_number.replace(/\D/g, "").slice(0, 10)}
-                onChange={(e) => setForm({ ...form, mobile_number: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
               />
               <select
                 style={styles.input}
-                value={form.delivery_area}
-                onChange={(e) => setForm({ ...form, delivery_area: e.target.value })}
+                value={form.area}
+                onChange={(e) => setForm({ ...form, area: e.target.value })}
               >
                 <option value="">Select Area</option>
-                {routeAreas.map((a) => (
-                  <option key={a} value={a}>{a}</option>
+                {routeAreas.map((area) => (
+                  <option key={area} value={area}>{area}</option>
                 ))}
               </select>
               <div style={{ display: "flex", gap: 8 }}>

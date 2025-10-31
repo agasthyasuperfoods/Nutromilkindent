@@ -7,64 +7,77 @@ import Swal from 'sweetalert2';
 function Maindash() {
   const [deliveryBoysExpanded, setDeliveryBoysExpanded] = useState(false);
   const [bulkCustomersExpanded, setBulkCustomersExpanded] = useState(false);
-  
-  // FIX: Re-adding the missing state declaration
   const [showIndentModal, setShowIndentModal] = useState(false); 
-  
   const [loadingDownload, setLoadingDownload] = useState(false);
-  
-  // 1. NEW STATE: Track if indent already exists or has been submitted for the selected date
   const [isIndentAlreadySubmitted, setIsIndentAlreadySubmitted] = useState(false);
   
-  // Set default date to tomorrow
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const [selectedDate, setSelectedDate] = useState(tomorrow);
+  // Helper: Get tomorrow's date as YYYY-MM-DD string in local timezone
+  const getTomorrowLocalDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const year = tomorrow.getFullYear();
+    const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const day = String(tomorrow.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // State: Store date as YYYY-MM-DD string
+  const [selectedDate, setSelectedDate] = useState(getTomorrowLocalDate());
 
   // Delivery & bulk state
   const [deliveryBoysData, setDeliveryBoysData] = useState([]);
   const [bulkCustomersData, setBulkCustomersData] = useState([]);
 
-  // Helper function to format date for API query
-  const formatQueryDate = (date) => date.toISOString().slice(0, 10);
+  // Helper: Convert YYYY-MM-DD string to Date object in local timezone
+  const getDateFromString = (dateStr) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
 
-  // 2. NEW useEffect: Check the database for existing indent upon date change
+  // Helper: Format date for display
+  const formatDisplayDate = (dateStr) => {
+    return getDateFromString(dateStr).toLocaleDateString('en-US', {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  // Check if indent already exists for selected date
   useEffect(() => {
     let mounted = true;
-    const qDate = formatQueryDate(selectedDate);
 
     async function checkIndentStatus() {
-        try {
-            // This API endpoint must be implemented (e.g., /api/indent-exists.js)
-            const res = await fetch(`/api/indent-exists?date=${encodeURIComponent(qDate)}`);
-            if (!res.ok) throw new Error('Indent status check failed');
-            
-            const { exists } = await res.json();
-            
-            if (mounted) {
-                // If indent exists, disable the submit button
-                setIsIndentAlreadySubmitted(!!exists);
-            }
-        } catch (err) {
-            console.error('checkIndentStatus error:', err);
-            if (mounted) {
-                // Default to allowing submission on error to prevent being stuck
-                setIsIndentAlreadySubmitted(false);
-            }
+      try {
+        const res = await fetch(`/api/indent-exists?date=${encodeURIComponent(selectedDate)}`);
+        if (!res.ok) throw new Error('Indent status check failed');
+        
+        const { exists } = await res.json();
+        
+        if (mounted) {
+          setIsIndentAlreadySubmitted(!!exists);
         }
+      } catch (err) {
+        console.error('checkIndentStatus error:', err);
+        if (mounted) {
+          setIsIndentAlreadySubmitted(false);
+        }
+      }
     }
     
-    // Check if the current date is in the future (where indents are relevant)
-    if (selectedDate && new Date(selectedDate) >= new Date(new Date().setHours(0,0,0,0))) {
-        checkIndentStatus();
+    // Check if the current date is in the future
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    if (selectedDate && selectedDate >= todayStr) {
+      checkIndentStatus();
     } else {
-        // Assume indents for past or current date are finalized/submitted
-        setIsIndentAlreadySubmitted(true); 
+      setIsIndentAlreadySubmitted(true); 
     }
 
     return () => { mounted = false; };
-  }, [selectedDate]); // Re-run when the selected date changes
-
+  }, [selectedDate]);
 
   // Load delivery boys from API
   useEffect(() => {
@@ -106,8 +119,7 @@ function Maindash() {
     let mounted = true;
     (async function loadBulkCustomers() {
       try {
-        const qDate = selectedDate ? formatQueryDate(selectedDate) : new Date().toISOString().slice(0,10);
-        const res = await fetch(`/api/bulk-customers?date=${encodeURIComponent(qDate)}`);
+        const res = await fetch(`/api/bulk-customers?date=${encodeURIComponent(selectedDate)}`);
         if (!res.ok) throw new Error('bulk-customers fetch failed');
         const json = await res.json();
         const rows = json?.rows ?? [];
@@ -138,23 +150,10 @@ function Maindash() {
   // Compute bulk customers count for header badge
   const bulkCustomersCount = useMemo(() => bulkCustomersData.length, [bulkCustomersData]);
 
-  // Format date for display
-  const formatDisplayDate = (date) => {
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
-
-  // NEW FUNCTION: Callback to be triggered by the Indent modal upon successful submission
+  // Callback to be triggered by the Indent modal upon successful submission
   const handleIndentSubmissionSuccess = useCallback(() => {
-    // 1. Close the modal
     setShowIndentModal(false);
-    // 2. Disable future submissions for this date (updates button state)
     setIsIndentAlreadySubmitted(true);
-    // 3. Show success alert
     Swal.fire({
       icon: 'success',
       title: 'Indent Created!',
@@ -164,13 +163,11 @@ function Maindash() {
     });
   }, [selectedDate]);
 
-  // Function to directly download the latest indent (NEW DB-DRIVEN LOGIC)
+  // Function to directly download the latest indent
   const handleDownloadLatestIndent = async () => {
     setLoadingDownload(true);
     try {
-      const dateParam = formatQueryDate(selectedDate);
-      
-      const downloadUrl = `/api/generate-and-download-indent?date=${dateParam}`;
+      const downloadUrl = `/api/generate-and-download-indent?date=${selectedDate}`;
       
       Swal.fire({
         title: 'Preparing Indent...',
@@ -200,14 +197,13 @@ function Maindash() {
       await Swal.fire({ 
         icon: 'error', 
         title: 'Download Failed', 
-        text: error.message || 'PDF generation failed. Check the server logs for /api/generate-and-download-indent.',
+        text: error.message || 'PDF generation failed. Check the server logs.',
         confirmButtonColor: '#ef4444'
       });
     } finally {
       setLoadingDownload(false);
     }
   };
-
 
   const handleCreateIndent = () => {
     setShowIndentModal(true);
@@ -225,7 +221,6 @@ function Maindash() {
     ? `An indent for ${formatDisplayDate(selectedDate)} has already been submitted.`
     : 'Create Indent';
 
-
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6 max-w-6xl mx-auto font-sans w-full pb-24">
       {/* First Row - Date Picker and Action Buttons */}
@@ -236,7 +231,7 @@ function Maindash() {
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-800">Select Date for Indent</h3>
             <button 
-              onClick={() => setSelectedDate(tomorrow)}
+              onClick={() => setSelectedDate(getTomorrowLocalDate())}
               className="text-sm text-amber-600 hover:text-amber-800 font-medium"
             >
               Reset to Tomorrow
@@ -250,8 +245,8 @@ function Maindash() {
               </label>
               <input
                 type="date"
-                value={selectedDate.toISOString().split('T')[0]}
-                onChange={(e) => setSelectedDate(new Date(e.target.value))}
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-gray-700"
               />
             </div>
@@ -270,11 +265,9 @@ function Maindash() {
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
           <div className="flex flex-col gap-3">
-            {/* MODIFIED BUTTON: Disabled when indent is submitted */}
             <button 
               onClick={handleCreateIndent}
               disabled={isCreateButtonDisabled}
-              // Use a group for tooltip positioning
               className={`group relative text-white py-3 px-6 rounded-lg font-medium transition-all duration-200 hover:shadow-md ${
                 isCreateButtonDisabled 
                   ? 'bg-gray-400 cursor-not-allowed' 
@@ -287,7 +280,6 @@ function Maindash() {
                 </svg>
                 {isIndentAlreadySubmitted ? 'Indent Submitted' : 'Create Indent'}
               </span>
-              {/* Tooltip for disabled state */}
               {isIndentAlreadySubmitted && (
                 <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max p-2 text-xs text-white bg-gray-700 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                   {disabledMessage}
@@ -295,7 +287,6 @@ function Maindash() {
               )}
             </button>
             
-            {/* Direct Download Button */}
             <button 
               onClick={handleDownloadLatestIndent}
               disabled={loadingDownload}
@@ -345,13 +336,11 @@ function Maindash() {
 
           {deliveryBoysExpanded && (
             <div>
-              {/* Header Row - only name + area */}
               <div className="grid grid-cols-2 gap-2 md:gap-4 p-3 md:p-4 bg-gray-50 font-semibold text-gray-700 border-b border-gray-200 text-xs md:text-sm">
                 <span className="text-gray-600">Name</span>
                 <span className="text-gray-600 text-right">Area</span>
               </div>
               
-              {/* Data Rows - only name + area (read-only, area aligned right) */}
               {deliveryBoysData.map((boy) => (
                 <div 
                   key={boy.id} 
@@ -388,13 +377,11 @@ function Maindash() {
 
           {bulkCustomersExpanded && (
             <div>
-              {/* Header Row - only name + area */}
               <div className="grid grid-cols-2 gap-2 md:gap-4 p-3 md:p-4 bg-gray-50 font-semibold text-gray-700 border-b border-gray-200 text-xs md:text-sm">
                 <span className="text-gray-600">Customer Name</span>
                 <span className="text-gray-600 text-right">Area</span>
               </div>
               
-              {/* Data Rows - only name + area (read-only, area aligned right) */}
               {bulkCustomersData.map((customer) => (
                 <div 
                   key={customer.id} 
@@ -413,7 +400,6 @@ function Maindash() {
       {showIndentModal && (
         <div className="fixed inset-0 flex items-end md:items-center justify-center z-50 bg-black/40">
           <div className="bg-white rounded-t-none md:rounded-lg w-full md:max-w-4xl h-[90vh] md:max-h-[90vh] flex flex-col md:shadow-lg border-none outline-none">
-            {/* Modal Header */}
             <div className="flex justify-between items-center p-4 md:p-6 bg-white">
               <h2 className="text-xl font-semibold text-gray-800">
                 Create Indent - {formatDisplayDate(selectedDate)}
@@ -428,12 +414,11 @@ function Maindash() {
               </button>
             </div>
             
-            {/* Modal Content */}
             <div className="flex-1 overflow-y-auto">
               <Indent 
-                selectedDate={selectedDate}
+                selectedDate={getDateFromString(selectedDate)}
                 onClose={handleCloseModal}
-                onSubmissionSuccess={handleIndentSubmissionSuccess} // <-- NEW PROP
+                onSubmissionSuccess={handleIndentSubmissionSuccess}
               />
             </div>
           </div>

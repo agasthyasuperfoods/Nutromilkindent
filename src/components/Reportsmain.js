@@ -333,7 +333,7 @@ export default function ReportsMain() {
               </AreaChart>
             </ResponsiveContainer>
             {/* Compact summary under chart */}
-            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', color: '#6b7280', fontSize: 13 }}>
+            <div className=" pt-2 " style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', color: '#6b7280', fontSize: 13 }}>
               <div>Days with data: {chartData.length}</div>
               <div>Total (recomputed): {chartData.reduce((s, d) => s + (Number(d.value) || 0), 0).toFixed(2)} L</div>
             </div>
