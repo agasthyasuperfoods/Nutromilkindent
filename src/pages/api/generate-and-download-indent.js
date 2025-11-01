@@ -22,7 +22,7 @@ export const config = {
   },
 };
 
-// Generate PDF Stream with Logo
+// Generate PDF Stream with Logo and Packaging Details
 function generatePdfStream(indentData, date) {
   const doc = new PDFDocument({ 
     margin: 50,
@@ -112,8 +112,8 @@ function generatePdfStream(indentData, date) {
   yPos += 25;
   let siNo = 1;
 
-  // Helper function to add row
-  const addRow = (name, quantity, type) => {
+  // Helper function to add row with packaging details
+  const addRow = (name, quantity, type, packagingDetails = '') => {
     // Check if we need a new page
     if (yPos > 720) {
       doc.addPage();
@@ -134,6 +134,7 @@ function generatePdfStream(indentData, date) {
       yPos += 25;
     }
 
+    // Main row
     doc.font('Helvetica')
        .fontSize(9)
        .text(String(siNo++), 60, yPos + 5, { width: 40 })
@@ -141,25 +142,58 @@ function generatePdfStream(indentData, date) {
        .text(String(quantity), 370, yPos + 5, { width: 80, align: 'right' })
        .text(type, 460, yPos + 5, { width: 80 });
 
-    doc.moveTo(50, yPos + 20)
-       .lineTo(545, yPos + 20)
+    yPos += 20;
+
+    // Add packaging details if present
+    if (packagingDetails) {
+      doc.fontSize(7)
+         .fillColor('#666666')
+         .text(packagingDetails, 110, yPos, { width: 250 });
+      yPos += 12;
+    }
+
+    doc.moveTo(50, yPos)
+       .lineTo(545, yPos)
        .stroke();
 
-    yPos += 20;
+    doc.fillColor('#000000'); // Reset color
+    yPos += 5;
   };
 
-  // Add Delivery Boys
+  // Add Delivery Boys with packaging
   deliveryBoys
     .filter(d => Number(d.milkQuantity) > 0)
     .forEach(d => {
-      addRow(`${d.name} (${d.area || 'N/A'})`, d.milkQuantity, 'Delivery Milk');
+      const packs1L = Number(d.oneLiterPacks || 0);
+      const packs500ml = Number(d.fiveHundredMLPacks || 0);
+      
+      let details = '';
+      if (packs1L > 0) details += `${packs1L}x1L`;
+      if (packs500ml > 0) details += (details ? ', ' : '') + `${packs500ml}x500ml`;
+      
+      const fullName = `${d.name} (${d.area || 'N/A'})${details ? ' - ' + details : ''}`;
+      addRow(fullName, d.milkQuantity, 'Delivery Milk');
     });
 
-  // Add Bulk Customers
+  // Add Bulk Customers with packaging
   bulkCustomers
     .filter(c => Number(c.totalMilk) > 0)
     .forEach(c => {
-      addRow(`${c.name} (${c.area || 'N/A'})`, c.totalMilk, 'Bulk Milk');
+      const cansL = Number(c.cansLiters || 0);
+      const packs1L = Number(c.oneLiterPacks || 0);
+      const packs500ml = Number(c.fiveHundredMLPacks || 0);
+      
+      const numCans = Math.floor(cansL / 40);
+      const remainder = cansL % 40;
+      
+      let details = '';
+      if (numCans > 0) details += `${numCans}x40L Can`;
+      if (remainder > 0) details += (details ? ', ' : '') + `${remainder}L`;
+      if (packs1L > 0) details += (details ? ', ' : '') + `${packs1L}x1L`;
+      if (packs500ml > 0) details += (details ? ', ' : '') + `${packs500ml}x500ml`;
+      
+      const fullName = `${c.name} (${c.area || 'N/A'})${details ? ' - ' + details : ''}`;
+      addRow(fullName, c.totalMilk, 'Bulk Milk');
     });
 
   // Calculate totals
@@ -232,14 +266,17 @@ export default async function handler(req, res) {
       const deliveryBoysRes = await hrClient.query(deliveryBoysQuery);
       console.log('✅ Fetched delivery boys:', deliveryBoysRes.rows.length);
       
-      // Now get their quantities from indents table (main DB)
+      // Now get their quantities and packaging from indents table (main DB)
       const mainClient = await mainPool.connect();
       try {
         const deliveryBoys = [];
         
         for (const boy of deliveryBoysRes.rows) {
           const indentQuery = `
-            SELECT COALESCE(quantity, 0) as quantity
+            SELECT 
+              COALESCE(quantity, 0) as quantity,
+              COALESCE(one_liter_packs, 0) as one_liter_packs,
+              COALESCE(five_hundred_ml_packs, 0) as five_hundred_ml_packs
             FROM indents
             WHERE delivery_boy_id = $1 
               AND indent_date = $2
@@ -247,23 +284,28 @@ export default async function handler(req, res) {
             LIMIT 1;
           `;
           const indentRes = await mainClient.query(indentQuery, [boy.employee_id, date]);
-          const quantity = indentRes.rows[0]?.quantity || 0;
+          const row = indentRes.rows[0] || {};
           
           deliveryBoys.push({
             name: boy.name,
             area: boy.area,
-            milkQuantity: String(Number(quantity) || 0)
+            milkQuantity: String(Number(row.quantity) || 0),
+            oneLiterPacks: String(Number(row.one_liter_packs) || 0),
+            fiveHundredMLPacks: String(Number(row.five_hundred_ml_packs) || 0),
           });
         }
 
         console.log('✅ Delivery boys with quantities:', deliveryBoys.length);
 
-        // 2. FETCH BULK CUSTOMERS FROM MAIN DATABASE
+        // 2. FETCH BULK CUSTOMERS FROM MAIN DATABASE WITH PACKAGING
         const bulkCustomersQuery = `
           SELECT 
             c.company_name as name, 
             c.area, 
-            COALESCE(i.quantity, 0) as "totalMilk"
+            COALESCE(i.quantity, 0) as "totalMilk",
+            COALESCE(i.cans_liters, 0) as "cansLiters",
+            COALESCE(i.one_liter_packs, 0) as "oneLiterPacks",
+            COALESCE(i.five_hundred_ml_packs, 0) as "fiveHundredMLPacks"
           FROM bulk_customers c
           LEFT JOIN indents i ON c.company_id = i.company_id 
             AND i.indent_date = $1
@@ -271,8 +313,12 @@ export default async function handler(req, res) {
         `;
         const bulkCustomersRes = await mainClient.query(bulkCustomersQuery, [date]);
         const bulkCustomers = bulkCustomersRes.rows.map(r => ({ 
-          ...r, 
-          totalMilk: String(Number(r.totalMilk) || 0) 
+          name: r.name,
+          area: r.area,
+          totalMilk: String(Number(r.totalMilk) || 0),
+          cansLiters: String(Number(r.cansLiters) || 0),
+          oneLiterPacks: String(Number(r.oneLiterPacks) || 0),
+          fiveHundredMLPacks: String(Number(r.fiveHundredMLPacks) || 0),
         }));
 
         console.log('✅ Bulk customers:', bulkCustomers.length);

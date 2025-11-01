@@ -49,6 +49,9 @@ export default async function handler(req, res) {
         company_name = "",
         quantity,
         item_type = "REGULAR_MILK",
+        cans_liters = 0,
+        one_liter_packs = 0,
+        five_hundred_ml_packs = 0,
       } = entry;
 
       if (!date || !quantity) {
@@ -56,12 +59,33 @@ export default async function handler(req, res) {
       }
 
       console.log(`📝 Inserting: ${company_name} - ${quantity}L - ${item_type}`);
+      console.log(`   Packaging: ${cans_liters}L cans, ${one_liter_packs}x1L, ${five_hundred_ml_packs}x500ml`);
 
-      // Remove RETURNING id since the column doesn't exist
+      // Insert with packaging fields
       await client.query(
-        `INSERT INTO indents (indent_date, delivery_boy_id, company_id, company_name, quantity, item_type)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [date, delivery_boy_id, company_id, company_name, quantity, item_type]
+        `INSERT INTO indents (
+          indent_date, 
+          delivery_boy_id, 
+          company_id, 
+          company_name, 
+          quantity, 
+          item_type,
+          cans_liters,
+          one_liter_packs,
+          five_hundred_ml_packs
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          date, 
+          delivery_boy_id, 
+          company_id, 
+          company_name, 
+          quantity, 
+          item_type,
+          cans_liters,
+          one_liter_packs,
+          five_hundred_ml_packs
+        ]
       );
 
       console.log(`✅ Inserted: ${company_name}`);
