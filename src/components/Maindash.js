@@ -151,17 +151,12 @@ function Maindash() {
   const bulkCustomersCount = useMemo(() => bulkCustomersData.length, [bulkCustomersData]);
 
   // Callback to be triggered by the Indent modal upon successful submission
-  const handleIndentSubmissionSuccess = useCallback(() => {
-    setShowIndentModal(false);
-    setIsIndentAlreadySubmitted(true);
-    Swal.fire({
-      icon: 'success',
-      title: 'Indent Created!',
-      text: `The Indent for ${formatDisplayDate(selectedDate)} has been submitted successfully.`,
-      timer: 3000,
-      showConfirmButton: false
-    });
-  }, [selectedDate]);
+ // ✅ AFTER - No duplicate popup
+const handleIndentSubmissionSuccess = useCallback(() => {
+  setShowIndentModal(false);
+  setIsIndentAlreadySubmitted(true);
+  // Removed Swal popup - Indent.js already shows it
+}, [selectedDate]);
 
   // Function to directly download the latest indent
   const handleDownloadLatestIndent = async () => {
@@ -415,11 +410,12 @@ function Maindash() {
             </div>
             
             <div className="flex-1 overflow-y-auto">
-              <Indent 
-                selectedDate={getDateFromString(selectedDate)}
-                onClose={handleCloseModal}
-                onSubmissionSuccess={handleIndentSubmissionSuccess}
-              />
+          <Indent 
+  selectedDate={selectedDate}  // ✅ Pass string directly
+  onClose={handleCloseModal}
+  onSubmissionSuccess={handleIndentSubmissionSuccess}
+/>
+
             </div>
           </div>
         </div>

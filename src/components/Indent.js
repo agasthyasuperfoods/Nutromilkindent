@@ -5,11 +5,21 @@ import Swal from "sweetalert2";
 import "sweetalert2/dist/sweetalert2.min.css";
 import jsPDF from "jspdf";
 
-export default function Indent({ selectedDate = new Date(), onClose = () => {} }) {
+export default function Indent({ 
+  selectedDate = new Date().toISOString().slice(0, 10),  // ✅ Expect string "YYYY-MM-DD"
+  onClose = () => {},
+  onSubmissionSuccess = () => {}
+}) {
   const [step, setStep] = useState(1);
   const [deliveryBoys, setDeliveryBoys] = useState([]);
   const [bulkCustomers, setBulkCustomers] = useState([]);
-  const [junnuList, setJunnuList] = useState([{ id: Date.now(), assignedType: "", assignedId: "", assignedName: "", qty: "0" }]);
+  const [junnuList, setJunnuList] = useState([{ 
+    id: Date.now(), 
+    assignedType: "", 
+    assignedId: "", 
+    assignedName: "", 
+    qty: "0" 
+  }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingDelivery, setLoadingDelivery] = useState(true);
   const [loadingBulk, setLoadingBulk] = useState(true);
@@ -24,6 +34,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     { id: 102, name: "Restaurant Spice", area: "Station St", totalMilk: "85", cansLiters: "80", oneLiterPacks: "0", fiveHundredMLPacks: "0" },
   ];
 
+  // Load delivery boys
   useEffect(() => {
     let mounted = true;
     (async function loadDelivery() {
@@ -33,6 +44,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
         if (!res.ok) throw new Error(`delivery fetch failed: ${res.status}`);
         const data = await res.json();
         const rows = data?.rows ?? data ?? [];
+        
         if (Array.isArray(rows) && mounted) {
           const mapped = rows.map((r) => {
             const qty = String(r.milk_quantity ?? r.default_quantity ?? 33);
@@ -53,6 +65,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       } catch (err) {
         console.warn("loadDelivery() error:", err);
       }
+      
       if (mounted) {
         setDeliveryBoys(fallbackDelivery);
         setLoadingDelivery(false);
@@ -61,6 +74,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     return () => (mounted = false);
   }, []);
 
+  // Load bulk customers based on selected date
   useEffect(() => {
     let mounted = true;
     (async function loadBulk() {
@@ -73,7 +87,9 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
         
         if (!Array.isArray(rows) || rows.length === 0) throw new Error("no rows");
         
+        // ✅ Use string date for day calculation
         const dayIndex = new Date(selectedDate).getDay();
+        
         const mapped = rows.map((r) => {
           const qWeek = r.default_quantity_weekdays ?? 0;
           const qSat = r.saturday ?? null;
@@ -110,6 +126,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     return () => (mounted = false);
   }, [selectedDate]);
 
+  // Delivery packaging setter
   const setDeliveryPackaging = (id, field, value) => {
     setDeliveryBoys((prev) => prev.map((d) => {
       if (String(d.id) !== String(id)) return d;
@@ -128,6 +145,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     }));
   };
 
+  // Bulk packaging setter
   const setBulkPackaging = (id, field, value) => {
     setBulkCustomers((prev) => prev.map((c) => {
       if (String(c.id) !== String(id)) return c;
@@ -147,8 +165,15 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     }));
   };
 
+  // Junnu management
   const addJunnuRow = () =>
-    setJunnuList((p) => [...p, { id: Date.now() + Math.floor(Math.random() * 999), assignedType: "", assignedId: "", assignedName: "", qty: "0" }]);
+    setJunnuList((p) => [...p, { 
+      id: Date.now() + Math.floor(Math.random() * 999), 
+      assignedType: "", 
+      assignedId: "", 
+      assignedName: "", 
+      qty: "0" 
+    }]);
 
   const removeJunnuRow = (id) => setJunnuList((p) => p.filter((r) => r.id !== id));
 
@@ -157,6 +182,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       setJunnuList((p) => p.map((r) => (r.id === rowId ? { ...r, assignedType: "", assignedId: "", assignedName: "" } : r)));
       return;
     }
+    
     let assignedName = "";
     if (assignedType === "delivery") {
       const found = deliveryBoys.find((b) => String(b.id) === String(assignedId));
@@ -165,6 +191,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       const found = bulkCustomers.find((c) => String(c.id) === String(assignedId));
       assignedName = found ? found.name : "";
     }
+    
     setJunnuList((p) => p.map((r) => (r.id === rowId ? { ...r, assignedType, assignedId, assignedName } : r)));
   };
 
@@ -173,17 +200,26 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     setJunnuList((p) => p.map((r) => (r.id === rowId ? { ...r, qty: sanitized } : r)));
   };
 
+  // Calculate totals
   const totalDelivery = deliveryBoys.reduce((s, b) => s + Number(b.milkQuantity || 0), 0);
   const totalBulk = bulkCustomers.reduce((s, c) => s + Number(c.totalMilk || 0), 0);
   const totalJunnu = junnuList.reduce((s, j) => s + Number(j.qty || 0), 0);
   const grandTotal = totalDelivery + totalBulk + totalJunnu;
 
+  // Navigation
   const next = () => setStep((s) => Math.min(4, s + 1));
   const prev = () => setStep((s) => Math.max(1, s - 1));
   
+  // ✅ Format date for display
   const formatDate = (d) =>
-    new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    new Date(d).toLocaleDateString("en-GB", { 
+      weekday: "short", 
+      day: "numeric", 
+      month: "short", 
+      year: "numeric" 
+    });
 
+  // Generate PDF
   const generateInvoicePdfBase64 = () => {
     const doc = new jsPDF({ unit: "pt", format: "a4" });
     const margin = 36;
@@ -192,11 +228,13 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     let y = margin;
     const lineHeight = 14;
 
+    // Header
     doc.setFont("helvetica", "bold");
     doc.setFontSize(20);
     doc.text("NutroMilk Indent Report", pageWidth / 2, y, { align: "center" });
     y += 24;
 
+    // Company info
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.text("Agasthya Nutromilk", 300, y);
@@ -204,6 +242,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     doc.text("Email: info.anm@agasthya.co.in", 300, y + lineHeight * 2);
     y += 60;
 
+    // Date box
     doc.setDrawColor(0);
     doc.rect(36, y, pageWidth - 72, 20);
     doc.setFont("helvetica", "bold");
@@ -214,6 +253,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     doc.text(new Date().toLocaleDateString('en-GB'), 445, y + 13);
     y += 30;
 
+    // Table header
     doc.setFillColor(230, 230, 230);
     doc.rect(36, y, pageWidth - 72, 20, 'F');
     doc.setFont("helvetica", "bold");
@@ -239,6 +279,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       y += 14;
     };
 
+    // Delivery rows
     deliveryBoys.filter(d => Number(d.milkQuantity) > 0).forEach(d => {
       const packs1L = Number(d.oneLiterPacks || 0);
       const packs500ml = Number(d.fiveHundredMLPacks || 0);
@@ -249,6 +290,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       drawRow(`${d.name} (${d.area || 'N/A'}) - ${detail}`, d.milkQuantity, "Delivery Milk");
     });
 
+    // Bulk rows
     bulkCustomers.filter(c => Number(c.totalMilk) > 0).forEach(c => {
       const cans = Number(c.cansLiters || 0);
       const packs1L = Number(c.oneLiterPacks || 0);
@@ -265,10 +307,12 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       drawRow(`${c.name} (${c.area || 'N/A'}) - ${detail}`, c.totalMilk, "Bulk Milk");
     });
 
+    // Junnu rows
     junnuList.filter(j => Number(j.qty) > 0 && j.assignedType).forEach(j => {
       drawRow(`${j.assignedName} (${j.assignedType === "delivery" ? "Delivery" : "Bulk"})`, j.qty, "Junnu Milk");
     });
 
+    // Totals box
     y = 650;
     const boxX = 390;
     const boxWidth = 168;
@@ -295,18 +339,24 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
     return dataUri.slice(dataUri.indexOf(",") + 1);
   };
 
+  // ✅ SUBMIT FUNCTION - FIXED
   const submit = async () => {
     setIsSubmitting(true);
     try {
+      console.log("🗓️ Submitting indent for date:", selectedDate);
+      console.log("📅 Type of selectedDate:", typeof selectedDate);
+
+      // ✅ Build entries with correct field names and string date
       const deliveryEntries = deliveryBoys
         .filter(d => Number(d.milkQuantity) > 0)
         .map(d => ({
-          date: selectedDate.toISOString().slice(0, 10),
+          date: selectedDate,  // ✅ Already "YYYY-MM-DD" string
           delivery_boy_id: String(d.id),
           company_id: null,
           company_name: d.name,
           quantity: Number(d.milkQuantity),
           item_type: "REGULAR_MILK",
+          cans_liters: 0,
           one_liter_packs: Number(d.oneLiterPacks || 0),
           five_hundred_ml_packs: Number(d.fiveHundredMLPacks || 0),
         }));
@@ -314,7 +364,7 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       const bulkEntries = bulkCustomers
         .filter(c => Number(c.totalMilk) > 0)
         .map(c => ({
-          date: selectedDate.toISOString().slice(0, 10),
+          date: selectedDate,  // ✅ Already "YYYY-MM-DD" string
           delivery_boy_id: null,
           company_id: String(c.id),
           company_name: c.name,
@@ -328,16 +378,23 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       const junnuEntries = junnuList
         .filter(j => Number(j.qty) > 0 && j.assignedType)
         .map(j => ({
-          date: selectedDate.toISOString().slice(0, 10),
+          date: selectedDate,  // ✅ Already "YYYY-MM-DD" string
           delivery_boy_id: j.assignedType === "delivery" ? String(j.assignedId) : null,
           company_id: j.assignedType === "bulk" ? String(j.assignedId) : null,
           company_name: j.assignedName,
           quantity: Number(j.qty),
           item_type: "JUNNU_MILK",
+          cans_liters: 0,
+          one_liter_packs: 0,
+          five_hundred_ml_packs: 0,
         }));
 
       const payload = [...deliveryEntries, ...bulkEntries, ...junnuEntries];
+      
+      console.log("📤 Payload:", payload);
+      console.log("📤 First entry date:", payload[0]?.date);
 
+      // Submit to database
       const res = await fetch("/api/indents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -347,10 +404,14 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Submission failed");
 
+      console.log("✅ API Response:", data);
+
+      // Generate PDF
       const pdfBase64 = generateInvoicePdfBase64();
-      const fileName = `Indent_${selectedDate.toISOString().slice(0, 10)}_${Date.now()}.pdf`;
+      const fileName = `Indent_${selectedDate}_${Date.now()}.pdf`;
       const folderPath = process.env.NEXT_PUBLIC_ONEDRIVE_FOLDER || "";
 
+      // Upload to OneDrive
       const uploadResp = await fetch("/api/upload-to-onedrive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -364,25 +425,35 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
         await Swal.fire({ 
           icon: "warning", 
           title: "Submitted — Upload failed", 
-          text: `Saved to DB but failed to upload to OneDrive.`,
+          text: `Saved to DB but failed to upload to OneDrive: ${uploadData.message || 'Unknown error'}`,
           confirmButtonColor: "#f59e0b" 
         });
       } else {
+        console.log("✅ Uploaded to OneDrive:", fileName);
         await Swal.fire({ 
           icon: "success", 
           title: "Indent Submitted & Saved", 
-          text: `Saved as: ${fileName}`,
+          html: `
+            <p>Successfully saved indent for <strong>${selectedDate}</strong></p>
+            <p>Inserted ${data.insertedCount} entries (${data.grandTotal}L total)</p>
+            <p>PDF saved as: ${fileName}</p>
+          `,
           confirmButtonColor: "#f59e0b" 
         });
       }
 
+      // Call success callback
+      if (typeof onSubmissionSuccess === 'function') {
+        onSubmissionSuccess();
+      }
+
       onClose();
     } catch (err) {
-      console.error(err);
+      console.error("❌ Submission error:", err);
       await Swal.fire({ 
         icon: "error", 
         title: "Submission Failed", 
-        text: err.message || "Check console",
+        text: err.message || "Check console for details",
         confirmButtonColor: "#f43f5e" 
       });
     } finally {
@@ -419,22 +490,21 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
           ✕
         </button>
         <div className="flex items-center gap-2 flex-1 justify-center">
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${step >= 1 ? "bg-amber-500 text-white" : "bg-gray-200 text-gray-600"}`}>1</div>
-            <div className={`text-xs font-medium whitespace-nowrap ${step >= 1 ? "text-amber-600" : "text-gray-500"}`}>Delivery</div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${step >= 2 ? "bg-amber-500 text-white" : "bg-gray-200 text-gray-600"}`}>2</div>
-            <div className={`text-xs font-medium whitespace-nowrap ${step >= 2 ? "text-amber-600" : "text-gray-500"}`}>Bulk</div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${step >= 3 ? "bg-amber-500 text-white" : "bg-gray-200 text-gray-600"}`}>3</div>
-            <div className={`text-xs font-medium whitespace-nowrap ${step >= 3 ? "text-amber-600" : "text-gray-500"}`}>Junnu</div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${step >= 4 ? "bg-amber-500 text-white" : "bg-gray-200 text-gray-600"}`}>4</div>
-            <div className={`text-xs font-medium whitespace-nowrap ${step >= 4 ? "text-amber-600" : "text-gray-500"}`}>Review</div>
-          </div>
+          {[
+            { num: 1, label: "Delivery" },
+            { num: 2, label: "Bulk" },
+            { num: 3, label: "Junnu" },
+            { num: 4, label: "Review" }
+          ].map(({ num, label }) => (
+            <div key={num} className="flex items-center gap-2 flex-shrink-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${step >= num ? "bg-amber-500 text-white" : "bg-gray-200 text-gray-600"}`}>
+                {num}
+              </div>
+              <div className={`text-xs font-medium whitespace-nowrap ${step >= num ? "text-amber-600" : "text-gray-500"}`}>
+                {label}
+              </div>
+            </div>
+          ))}
         </div>
         <div className="w-6 flex-shrink-0"></div>
       </header>
@@ -666,18 +736,33 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
                       className="w-full text-sm rounded border border-gray-300 px-2 py-1.5 text-center focus:ring-2 focus:ring-amber-400"
                     />
                   </div>
-                  <button type="button" onClick={() => removeJunnuRow(row.id)} className="flex-shrink-0 text-red-500 hover:text-red-700 text-lg" title="Remove">✕</button>
+                  <button 
+                    type="button" 
+                    onClick={() => removeJunnuRow(row.id)} 
+                    className="flex-shrink-0 text-red-500 hover:text-red-700 text-lg" 
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
             </div>
             <div className="flex justify-between items-center">
-              <button type="button" onClick={addJunnuRow} className="px-3 py-2 bg-amber-100 text-amber-700 rounded text-sm hover:bg-amber-200">+ Add Another</button>
-              <div className="text-sm text-gray-700">Total Junnu: <span className="font-semibold text-amber-700">{totalJunnu} L</span></div>
+              <button 
+                type="button" 
+                onClick={addJunnuRow} 
+                className="px-3 py-2 bg-amber-100 text-amber-700 rounded text-sm hover:bg-amber-200"
+              >
+                + Add Another
+              </button>
+              <div className="text-sm text-gray-700">
+                Total Junnu: <span className="font-semibold text-amber-700">{totalJunnu} L</span>
+              </div>
             </div>
           </section>
         )}
 
-        {/* Step 4: Review */}
+        {/* ✅ Step 4: Review - COMPLETE VERSION */}
         {step === 4 && (
           <section className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Delivery Summary</h2>
@@ -704,7 +789,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
                         </div>
                         <div className="text-amber-600 font-semibold text-right ml-2">{Number(d.milkQuantity || 0)}L</div>
                       </div>
-                      {/* Packaging Breakdown */}
                       {(packs1L > 0 || packs500ml > 0) && (
                         <div className="mt-2 ml-11 bg-gray-50 rounded p-2 text-xs text-gray-600">
                           {packs1L > 0 && (
@@ -739,7 +823,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
                   const cansL = Number(b.cansLiters || 0);
                   const packs1L = Number(b.oneLiterPacks || 0);
                   const packs500ml = Number(b.fiveHundredMLPacks || 0);
-                  
                   const fullCans = Math.floor(cansL / 40);
                   const partialCan = cansL % 40;
                   
@@ -757,8 +840,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
                         </div>
                         <div className="text-amber-600 font-semibold text-right ml-2">{Number(b.totalMilk || 0)}L</div>
                       </div>
-                      
-                      {/* Packaging Breakdown */}
                       {(fullCans > 0 || partialCan > 0 || packs1L > 0 || packs500ml > 0) && (
                         <div className="mt-2 ml-11 bg-gray-50 rounded p-2 text-xs text-gray-600 space-y-1">
                           {fullCans > 0 && (
@@ -783,11 +864,6 @@ export default function Indent({ selectedDate = new Date(), onClose = () => {} }
                             <div className="flex items-center justify-between">
                               <span>📦 500ml Packets</span>
                               <span className="font-medium">{packs500ml} pcs</span>
-                            </div>
-                          )}
-                          {(cansL > 0 || packs1L > 0 || packs500ml > 0) && (
-                            <div className="pt-1 border-gray-200 mt-1 text-xs font-medium text-gray-700">
-                              Total: {cansL}L (cans) + {packs1L}×1L + {packs500ml}×500ml
                             </div>
                           )}
                         </div>

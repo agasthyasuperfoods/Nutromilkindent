@@ -1,118 +1,154 @@
+// pages/api/indents.js
 import { Pool } from "pg";
 
-// ----------------- DB Setup -----------------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : undefined,
 });
 
-// ----------------- API Route -----------------
 export default async function handler(req, res) {
+  // Only POST allowed
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ message: "Method Not Allowed" });
+    return res.status(405).json({ ok: false, message: "Method Not Allowed" });
   }
 
-  const payload = req.body; // expecting an array of entries
+  // Attempt to parse body
+  const payload = req.body;
+  console.log("📥 /api/indents called. Raw payload type:", typeof payload);
+  
+  // If payload might be a JSON-string due to some middleware issue, try parse
+  let entries = payload;
+  if (typeof payload === "string") {
+    try { 
+      entries = JSON.parse(payload); 
+    } catch (e) {
+      console.error("❌ Failed to JSON.parse request body:", e.message);
+      return res.status(400).json({ ok: false, message: "Invalid JSON body" });
+    }
+  }
 
-  console.log('📥 Received indent payload:', JSON.stringify(payload, null, 2));
-
-  if (!Array.isArray(payload) || payload.length === 0) {
-    return res.status(400).json({ message: "No indent entries provided" });
+  if (!Array.isArray(entries) || entries.length === 0) {
+    console.warn("⚠️ Empty payload or non-array");
+    return res.status(400).json({ ok: false, message: "No indent entries provided (expecting non-empty array)" });
   }
 
   let client;
   try {
     client = await pool.connect();
-    console.log('✅ Database connected');
     
+    // Log DB target — useful to ensure you are connected to the DB you think you are
+    try {
+      const dbInfo = await client.query("SELECT current_database() as db, current_user as user");
+      console.log("🔗 Connected DB:", dbInfo.rows[0]);
+    } catch (dbiErr) {
+      console.warn("⚠️ Could not fetch current_database():", dbiErr.message);
+    }
+
     await client.query("BEGIN");
-    console.log('✅ Transaction started');
+    console.log("✅ Transaction started");
 
-    let grandTotal = 0;
-    let insertedCount = 0;
+    // Defensive: ensure all entries have a valid date (castable to date)
+    const firstDateRaw = entries[0].date;
+    
+    // We will normalize date to YYYY-MM-DD string
+    const normalizeDate = (d) => {
+      const dt = new Date(d);
+      if (Number.isNaN(dt.getTime())) return null;
+      return dt.toISOString().slice(0, 10);
+    };
+    
+    const firstDate = normalizeDate(firstDateRaw);
+    if (!firstDate) {
+      throw new Error(`Invalid date in payload: ${firstDateRaw}`);
+    }
 
-    // First, delete existing entries for this date to avoid duplicates
-    const firstDate = payload[0].date;
-    const deleteResult = await client.query(
-      `DELETE FROM indents WHERE indent_date = $1`,
+    // Delete only rows matching that date (use ::date to be robust)
+    const deleteRes = await client.query(
+      `DELETE FROM indents WHERE indent_date::date = $1::date`,
       [firstDate]
     );
-    console.log(`🗑️ Deleted ${deleteResult.rowCount} existing entries for date: ${firstDate}`);
+    console.log(`🗑️ Deleted ${deleteRes.rowCount} existing entries for date: ${firstDate}`);
 
-    // Insert each entry into the database
-    for (const entry of payload) {
-      const {
-        date,
-        delivery_boy_id = null,
-        company_id = null,
-        company_name = "",
+    // Insert each entry and collect returned rows
+    const insertedRows = [];
+    let count = 0;
+    let grandTotal = 0;
+
+    const insertSql = `
+      INSERT INTO indents (
+        indent_date,
+        delivery_boy_id,
+        company_id,
+        company_name,
         quantity,
-        item_type = "REGULAR_MILK",
-        cans_liters = 0,
-        one_liter_packs = 0,
-        five_hundred_ml_packs = 0,
-      } = entry;
+        item_type,
+        cans_liters,
+        one_liter_packs,
+        five_hundred_ml_packs
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      RETURNING s_no, indent_date::text as indent_date, delivery_boy_id, company_id, company_name, quantity, item_type;
+    `;
 
-      if (!date || !quantity) {
-        throw new Error("Missing date or quantity in entry");
+    for (const e of entries) {
+      // Normalize / validate per-row fields
+      const rowDate = normalizeDate(e.date);
+      if (!rowDate) throw new Error(`Invalid date in entry: ${JSON.stringify(e).slice(0,200)}`);
+
+      const quantity = Number(e.quantity);
+      if (Number.isNaN(quantity) || quantity < 0) throw new Error(`Invalid quantity in entry: ${JSON.stringify(e).slice(0,200)}`);
+
+      const values = [
+        rowDate,
+        e.delivery_boy_id ?? null,
+        e.company_id ?? null,
+        (e.company_name ?? "").toString().slice(0,150),
+        quantity,
+        (e.item_type ?? "REGULAR_MILK").toString().trim(),
+        e.cans_liters ? Number(e.cans_liters) : 0,
+        e.one_liter_packs ? parseInt(e.one_liter_packs, 10) : 0,
+        e.five_hundred_ml_packs ? parseInt(e.five_hundred_ml_packs, 10) : 0,
+      ];
+
+      try {
+        const r = await client.query(insertSql, values);
+        insertedRows.push(r.rows[0]);
+        count++;
+        grandTotal += quantity;
+      } catch (insErr) {
+        // Log specific failing entry and propagate
+        console.error("❌ Insert failed for entry:", JSON.stringify(e));
+        throw insErr;
       }
-
-      console.log(`📝 Inserting: ${company_name} - ${quantity}L - ${item_type}`);
-      console.log(`   Packaging: ${cans_liters}L cans, ${one_liter_packs}x1L, ${five_hundred_ml_packs}x500ml`);
-
-      // Insert with packaging fields
-      await client.query(
-        `INSERT INTO indents (
-          indent_date, 
-          delivery_boy_id, 
-          company_id, 
-          company_name, 
-          quantity, 
-          item_type,
-          cans_liters,
-          one_liter_packs,
-          five_hundred_ml_packs
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          date, 
-          delivery_boy_id, 
-          company_id, 
-          company_name, 
-          quantity, 
-          item_type,
-          cans_liters,
-          one_liter_packs,
-          five_hundred_ml_packs
-        ]
-      );
-
-      console.log(`✅ Inserted: ${company_name}`);
-      grandTotal += Number(quantity || 0);
-      insertedCount++;
     }
 
     await client.query("COMMIT");
-    console.log(`✅ Transaction committed. Inserted ${insertedCount} entries. Grand Total: ${grandTotal}L`);
+    console.log(`✅ Transaction committed. Inserted ${count} rows. Grand total L: ${grandTotal}`);
 
     return res.status(201).json({
-      success: true,
+      ok: true,
       message: "Indent submitted successfully",
+      insertedCount: count,
       grandTotal,
-      insertedCount,
+      insertedRows,
     });
   } catch (err) {
-    if (client) {
-      await client.query("ROLLBACK");
-      console.error("❌ Transaction rolled back");
+    // Rollback if possible
+    try { 
+      if (client) await client.query("ROLLBACK"); 
+      console.log("↩️ Transaction rolled back"); 
+    } catch (rbErr) { 
+      console.error("Rollback error:", rbErr); 
     }
-    console.error("❌ API Error:", err);
-    console.error("Error details:", err.message);
-    console.error("Error stack:", err.stack);
+    
+    console.error("❌ Handler error:", err.message);
+    console.error(err.stack);
+    
+    // Return detailed info for debugging (strip in prod)
     return res.status(500).json({ 
-      message: err.message || "Internal Server Error",
-      error: err.toString()
+      ok: false, 
+      message: err.message || "Internal Server Error", 
+      error: err.toString() 
     });
   } finally {
     if (client) client.release();
